@@ -60,6 +60,11 @@ CREATE UNLOGGED TABLE gav (
     json                jsonb
 );
 
+-- The planner sizes parallelism by table size (about 8 workers for gav).
+-- Ask for more: used by the index builds and scans in data-refresh.sql,
+-- capped by max_parallel_maintenance_workers / max_parallel_workers_per_gather.
+ALTER TABLE gav SET (parallel_workers = 16);
+
 
 -- ============================================================
 -- TABLE: g

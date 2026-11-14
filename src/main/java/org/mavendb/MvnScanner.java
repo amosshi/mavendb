@@ -103,14 +103,17 @@ class MvnScanner {
     }
 
     /**
-     * One converted batch, ready to write: documents for MongoDB, prepared rows for the SQL databases.
+     * One converted batch, ready to write: documents for MongoDB, COPY data for PostgreSQL,
+     * prepared rows for the other SQL databases.
      *
      * @param counter Sequence number of the last record, for logging
      * @param size Number of records to write
-     * @param documents MongoDB documents, <code>null</code> for SQL databases
-     * @param rows SQL rows, <code>null</code> for MongoDB
+     * @param documents MongoDB documents, otherwise <code>null</code>
+     * @param rows MySQL and SQLite rows, otherwise <code>null</code>
+     * @param copyData PostgreSQL rows in COPY text format, otherwise <code>null</code>
      */
-    private record Batch(long counter, int size, List<Document> documents, List<DatabaseRepository.SqlRow> rows) {
+    private record Batch(long counter, int size, List<Document> documents, List<DatabaseRepository.SqlRow> rows,
+            byte[] copyData) {
     }
 
     /**
@@ -342,12 +345,12 @@ class MvnScanner {
         maxLengths.forEach((key, length) -> this.maxLengthTracker.merge(key, length, Integer::max));
 
         if (documents.isEmpty()) {
-            return new Batch(0, 0, null, null);
+            return new Batch(0, 0, null, null, null);
         }
         // Read before preparing SQL rows: that removes fields from the documents
         long counter = documents.getLast().getLong(DatabaseRepository.JSON_FIELD_ID);
         if (this.dbType == DatabaseType.MONGODB) {
-            return new Batch(counter, documents.size(), documents, null);
+            return new Batch(counter, documents.size(), documents, null, null);
         }
 
         List<DatabaseRepository.SqlRow> rows = new ArrayList<>(documents.size());
@@ -358,7 +361,11 @@ class MvnScanner {
         } catch (SQLException e) {
             throw new IllegalStateException("SQL row preparation failed for records counter=" + counter, e);
         }
-        return new Batch(counter, rows.size(), null, rows);
+        if (this.dbType == DatabaseType.PSQL) {
+            // Encode here, on the conversion thread, so the writer only streams bytes
+            return new Batch(counter, rows.size(), null, null, DatabaseRepository.toPsqlCopyData(rows));
+        }
+        return new Batch(counter, rows.size(), null, rows, null);
     }
 
     /**
@@ -436,7 +443,8 @@ class MvnScanner {
         }
         try {
             switch (this.dbType) {
-                case MYSQL, PSQL, SQLITE -> this.databaseRepository.storeSQL(batch.rows(), batch.counter());
+                case MYSQL, SQLITE -> this.databaseRepository.storeSQL(batch.rows(), batch.counter());
+                case PSQL -> this.databaseRepository.storePsqlCopy(batch.copyData(), batch.size(), batch.counter());
                 case MONGODB -> this.databaseRepository.storeMongoDB(batch.documents(), batch.counter(), this.indexId);
             }
         } finally {

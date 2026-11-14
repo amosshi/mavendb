@@ -1,5 +1,6 @@
 package org.mavendb;
 
+import java.io.ByteArrayInputStream;
 import java.io.FileReader;
 import java.io.IOException;
 import java.io.Reader;
@@ -26,7 +27,7 @@ import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import org.apache.ibatis.jdbc.ScriptRunner;
 import org.apache.maven.index.reader.Record;
 import org.bson.Document;
-import org.postgresql.util.PGobject;
+import org.postgresql.PGConnection;
 
 /**
  * Repository for database operations with support for MySQL, PostgreSQL, and MongoDB.
@@ -83,6 +84,29 @@ class DatabaseRepository implements AutoCloseable {
     private static final int SQL_IDX_JSON = 30;
 
     private static final int SHA1_MAX_LENGTH = 40;
+
+    /** Columns of the gav table, in SQL parameter index order ({@link #SQL_IDX_SEQID} .. {@link #SQL_IDX_JSON}). */
+    private static final String GAV_COLUMNS = """
+        seqid,
+        major_version, version_seq,
+        record_modified, file_modified, file_size,
+        has_signature, has_sources, has_javadoc,
+        sha1,
+        group_id, artifact_id, artifact_version,
+        classifier, packaging, file_extension,
+        file_name,
+        name, description,
+        bundle_description, bundle_docurl, bundle_license,
+        bundle_name, bundle_symbolicname, bundle_version,
+        export_package, import_package,
+        require_bundle, export_service,
+        json""";
+
+    /** PostgreSQL bulk load statement; the rows are sent in COPY text format, see {@link #toPsqlCopyData(List)}. */
+    private static final String PSQL_COPY_GAV = "COPY mavendb.gav (" + GAV_COLUMNS + ") FROM STDIN";
+
+    /** Buffer size used to stream COPY data to the server. */
+    private static final int PSQL_COPY_BUFFER_SIZE = 1 << 20;
 
     /** Timeout for checking an idle connection is still alive before reuse. */
     private static final int CONNECTION_VALID_TIMEOUT_SECONDS = 2;
@@ -165,20 +189,7 @@ class DatabaseRepository implements AutoCloseable {
             String tableName = this.dbType == DatabaseType.PSQL ? "mavendb.gav" : "gav";
             String sqlGav = """
                 INSERT INTO %s (
-                    seqid,
-                    major_version, version_seq,
-                    record_modified, file_modified, file_size,
-                    has_signature, has_sources, has_javadoc,
-                    sha1,
-                    group_id, artifact_id, artifact_version,
-                    classifier, packaging, file_extension,
-                    file_name,
-                    name, description,
-                    bundle_description, bundle_docurl, bundle_license,
-                    bundle_name, bundle_symbolicname, bundle_version,
-                    export_package, import_package,
-                    require_bundle, export_service,
-                    json
+                    %s
                 ) VALUES (
                     ?,
                     ?, ?,
@@ -195,7 +206,7 @@ class DatabaseRepository implements AutoCloseable {
                     ?, ?,
                     ?
                 )
-            """.formatted(tableName);
+            """.formatted(tableName, GAV_COLUMNS);
 
             try (PreparedStatement pstmt = conn.prepareStatement(sqlGav)) {
                 for (SqlRow row : rows) {
@@ -223,6 +234,64 @@ class DatabaseRepository implements AutoCloseable {
                 closeQuietly(conn, true);
             }
         }
+    }
+
+    /**
+     * Store a PostgreSQL batch with {@code COPY ... FROM STDIN}.
+     *
+     * <p>COPY is parsed and inserted by the server as one stream: no per-row Bind/Execute round trip
+     * and no per-row executor start-up, which is what a batched INSERT costs.
+     *
+     * @param copyData Rows in COPY text format, see {@link #toPsqlCopyData(List)}
+     * @param size Number of rows in {@code copyData}, for checking and logging
+     * @param counter Record counter for logging
+     * @throws IllegalStateException if the batch could not be written; the transaction is rolled back
+     */
+    protected void storePsqlCopy(byte[] copyData, int size, final long counter) {
+        Connection conn = null;
+        try {
+            conn = borrowConnection();
+            LocalDateTime begin = LocalDateTime.now();
+
+            long copied = conn.unwrap(PGConnection.class).getCopyAPI()
+                .copyIn(PSQL_COPY_GAV, new ByteArrayInputStream(copyData), PSQL_COPY_BUFFER_SIZE);
+            if (copied != size) {
+                throw new SQLException("COPY wrote " + copied + " rows, expected " + size);
+            }
+            conn.commit();
+
+            // Success: hand the connection back for the next batch
+            this.idleConnections.offer(conn);
+            conn = null;
+
+            Duration duration = Duration.between(begin, LocalDateTime.now());
+            LOG.log(Level.INFO, "persist finished for records counter={0} in seconds={1}, batchSize={2}, bytes={3}",
+                    new Object[]{counter, duration.toSeconds(), size, copyData.length});
+        } catch (SQLException | IOException e) {
+            // Fail the run instead of silently losing the batch
+            throw new IllegalStateException("PostgreSQL COPY failed for records counter=" + counter, e);
+        } finally {
+            // Failure: discard the connection, its state is unknown
+            if (conn != null) {
+                closeQuietly(conn, true);
+            }
+        }
+    }
+
+    /**
+     * Encode prepared rows in PostgreSQL COPY text format (tab separated, {@code \N} for null), UTF-8.
+     *
+     * <p>Thread safe: called on the conversion threads, so the writer only streams bytes.
+     *
+     * @param rows Rows prepared by {@link #toSQLRow(Document)} for {@link DatabaseType#PSQL}
+     * @return COPY data for {@link #storePsqlCopy(byte[], int, long)}
+     */
+    protected static byte[] toPsqlCopyData(List<SqlRow> rows) {
+        StringBuilder sb = new StringBuilder(rows.size() * 512);
+        for (SqlRow row : rows) {
+            row.appendCopyText(sb);
+        }
+        return sb.toString().getBytes(StandardCharsets.UTF_8);
     }
 
     /**
@@ -390,23 +459,12 @@ class DatabaseRepository implements AutoCloseable {
             record.remove(JSON_FIELD_ID);
         }
 
-        // Handle JSON field with database-specific types
+        // MySQL JSON column; SQLite stores JSON as TEXT; PostgreSQL COPY casts the text to jsonb
         String json = record.isEmpty() ? null : record.toJson();
-        switch (this.dbType) {
-            // MySQL JSON column, SQLite stores JSON as TEXT
-            case MYSQL, SQLITE -> row.setString(SQL_IDX_JSON, json);
-            case PSQL -> {
-                if (json == null) {
-                    row.setObject(SQL_IDX_JSON, null, java.sql.Types.OTHER);
-                } else {
-                    PGobject jsonObject = new PGobject();
-                    jsonObject.setType("jsonb");
-                    jsonObject.setValue(json);
-                    row.setObject(SQL_IDX_JSON, jsonObject);
-                }
-            }
-            case MONGODB -> throw new IllegalStateException("SQL parameter binding is not used for MongoDB");
+        if (this.dbType == DatabaseType.MONGODB) {
+            throw new IllegalStateException("SQL parameter binding is not used for MongoDB");
         }
+        row.setString(SQL_IDX_JSON, json);
         return row;
     }
 
@@ -483,6 +541,52 @@ class DatabaseRepository implements AutoCloseable {
         void setObject(int parameterIndex, Object value, int sqlType) {
             put(parameterIndex, OBJECT_TYPED, value);
             this.sqlTypes[parameterIndex - 1] = sqlType;
+        }
+
+        /**
+         * Append this row as one line of PostgreSQL COPY text format.
+         */
+        void appendCopyText(StringBuilder sb) {
+            for (int i = 0; i < SQL_IDX_JSON; i++) {
+                if (i > 0) {
+                    sb.append('\t');
+                }
+                Object value = this.values[i];
+                if (value == null) {
+                    sb.append("\\N");
+                } else if (value instanceof Boolean b) {
+                    sb.append(b ? 't' : 'f');
+                } else if (value instanceof String str) {
+                    appendCopyEscaped(sb, str);
+                } else {
+                    // Integer, Long: no characters that need escaping
+                    sb.append(value);
+                }
+            }
+            sb.append('\n');
+        }
+
+        /**
+         * Escape the characters COPY text format treats specially: backslash, and the row and column delimiters.
+         */
+        static void appendCopyEscaped(StringBuilder sb, String str) {
+            int len = str.length();
+            int start = 0;
+            for (int i = 0; i < len; i++) {
+                char c = str.charAt(i);
+                String escaped = switch (c) {
+                    case '\\' -> "\\\\";
+                    case '\n' -> "\\n";
+                    case '\r' -> "\\r";
+                    case '\t' -> "\\t";
+                    default -> null;
+                };
+                if (escaped != null) {
+                    sb.append(str, start, i).append(escaped);
+                    start = i + 1;
+                }
+            }
+            sb.append(str, start, len);
         }
 
         /**
