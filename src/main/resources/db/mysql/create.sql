@@ -1,6 +1,7 @@
 -- Disable InnoDB redo logging to speed up the bulk load.
 --   Requires the INNODB_REDO_LOG_ENABLE privilege (granted in docker/compose-mysql.yml).
 --   A crash while it is disabled corrupts the instance; simply rerun the import.
+--   Re-enabled at the end of data-refresh.sql.
 ALTER INSTANCE DISABLE INNODB REDO_LOG;
 
 CREATE SCHEMA IF NOT EXISTS `mavendb` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_bin ;
@@ -24,9 +25,9 @@ CREATE TABLE         `gav` (
 
   `sha1`                           char( 40)   COLLATE utf8mb4_bin DEFAULT NULL COMMENT 'Record.sha1',                                    -- 2026.02  Max        106
 
-  `group_id`                    varchar(256)   COLLATE utf8mb4_bin     NOT NULL COMMENT 'Record.groupId',                                 -- 2026.02  Max        129
+  `group_id`                    varchar(254)   COLLATE utf8mb4_bin     NOT NULL COMMENT 'Record.groupId',                                 -- 2026.02  Max        129
   `artifact_id`                 varchar(256)   COLLATE utf8mb4_bin     NOT NULL COMMENT 'Record.artifactId',                              -- 2026.02  Max         98
-  `artifact_version`            varchar(256)   COLLATE utf8mb4_bin     NOT NULL COMMENT 'Record.version',                                 -- 2026.11  Max        145, 256 is the most index_gav allows (3 x 256 x 4 bytes = 3072)
+  `artifact_version`            varchar(256)   COLLATE utf8mb4_bin     NOT NULL COMMENT 'Record.version',                                 -- 2026.11  Max        145, index_gav key: (254 + 256 + 256) x 4 bytes = 3064 of the 3072 max
 
   `classifier`                  varchar( 128)  COLLATE utf8mb4_bin DEFAULT NULL COMMENT 'Record.classifier',                              -- 2026.02  Max         67
   `packaging`                   varchar( 256)  COLLATE utf8mb4_bin DEFAULT NULL COMMENT 'Record.packaging',                               -- 2023.02  Max        113
@@ -66,20 +67,22 @@ CREATE TABLE         `g` (
   `major_version_counter`           int                           DEFAULT NULL,
   `version_seq_max`              bigint                           DEFAULT NULL,
   `file_modified_max`            bigint                           DEFAULT NULL,
-  `group_id_left1`              varchar(128) COLLATE utf8mb4_bin GENERATED ALWAYS AS (substring_index(`group_id`,'.',1)) VIRTUAL,
-  `group_id_left2`              varchar(256) COLLATE utf8mb4_bin GENERATED ALWAYS AS (substring_index(`group_id`,'.',2)) VIRTUAL,
-  `group_id_left3`              varchar(256) COLLATE utf8mb4_bin GENERATED ALWAYS AS (substring_index(`group_id`,'.',3)) VIRTUAL,
-  `group_id_left4`              varchar(256) COLLATE utf8mb4_bin GENERATED ALWAYS AS (substring_index(`group_id`,'.',4)) VIRTUAL,
+  `group_id_left1`              varchar(254) COLLATE utf8mb4_bin GENERATED ALWAYS AS (substring_index(`group_id`,'.',1)) VIRTUAL,
+  `group_id_left2`              varchar(254) COLLATE utf8mb4_bin GENERATED ALWAYS AS (substring_index(`group_id`,'.',2)) VIRTUAL,
+  `group_id_left3`              varchar(254) COLLATE utf8mb4_bin GENERATED ALWAYS AS (substring_index(`group_id`,'.',3)) VIRTUAL,
+  `group_id_left4`              varchar(254) COLLATE utf8mb4_bin GENERATED ALWAYS AS (substring_index(`group_id`,'.',4)) VIRTUAL,
 
   PRIMARY KEY (`group_id`),
   KEY `index_group_id_left1` (`group_id_left1`),
-  KEY `index_group_id_left2` (`group_id_left2`)
+  KEY `index_group_id_left2` (`group_id_left2`),
+  KEY `index_group_id_left3` (`group_id_left3`),
+  KEY `index_group_id_left4` (`group_id_left4`)
 ) ENGINE=InnoDB COLLATE=utf8mb4_bin COMMENT='Groups';
 
 
 DROP TABLE IF exists `ga`;
 CREATE TABLE         `ga` (
-  `group_id`                    varchar(256)  COLLATE utf8mb4_bin     NOT NULL COMMENT 'From gav.group_id',
+  `group_id`                    varchar(254)  COLLATE utf8mb4_bin     NOT NULL COMMENT 'From gav.group_id',
   `artifact_id`                 varchar(256)  COLLATE utf8mb4_bin     NOT NULL COMMENT 'From gav.artifact_id',
 
   `artifact_version_counter`        int                           DEFAULT NULL,

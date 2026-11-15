@@ -9,9 +9,9 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 /**
- * Unit tests for the PostgreSQL COPY text encoding in {@link DatabaseRepository}.
+ * Unit tests for the COPY text encoding (PostgreSQL COPY, MySQL LOAD DATA) in {@link DatabaseRepository}.
  */
-@DisplayName("PostgreSQL COPY encoding Tests")
+@DisplayName("COPY / LOAD DATA encoding Tests")
 class PsqlCopyEncodingTest {
 
     private static String escape(String value) {
@@ -48,7 +48,7 @@ class PsqlCopyEncodingTest {
     void testUnicode() {
         DatabaseRepository.SqlRow row = new DatabaseRepository.SqlRow();
         row.setString(11, "com.例子");
-        String line = new String(DatabaseRepository.toPsqlCopyData(List.of(row)), StandardCharsets.UTF_8);
+        String line = new String(DatabaseRepository.toCopyData(List.of(row), DatabaseType.PSQL), StandardCharsets.UTF_8);
         assertEquals("com.例子", line.split("\t", -1)[10]);
     }
 
@@ -65,7 +65,7 @@ class PsqlCopyEncodingTest {
         row.setString(11, "g\tx");
         row.setString(30, "{\"k\":\"v\"}");
 
-        String data = new String(DatabaseRepository.toPsqlCopyData(List.of(row, row)), StandardCharsets.UTF_8);
+        String data = new String(DatabaseRepository.toCopyData(List.of(row, row), DatabaseType.PSQL), StandardCharsets.UTF_8);
         String[] lines = data.split("\n", -1);
         assertEquals(3, lines.length, "two rows, each ending with a newline");
         assertEquals("", lines[2]);
@@ -81,5 +81,24 @@ class PsqlCopyEncodingTest {
         assertEquals("f", cols[7]);
         assertEquals("g\\tx", cols[10]);
         assertEquals("{\"k\":\"v\"}", cols[29]);
+    }
+
+    @Test
+    @DisplayName("MySQL LOAD DATA gets booleans as 1/0, everything else as for PostgreSQL")
+    void testMysqlRow() {
+        DatabaseRepository.SqlRow row = new DatabaseRepository.SqlRow();
+        row.setLong(1, 42L);
+        row.setBoolean(7, true);
+        row.setBoolean(8, false);
+        row.setString(11, "g\\x");
+
+        String[] cols = new String(DatabaseRepository.toCopyData(List.of(row), DatabaseType.MYSQL), StandardCharsets.UTF_8)
+            .split("\n", -1)[0].split("\t", -1);
+        assertEquals(30, cols.length);
+        assertEquals("42", cols[0]);
+        assertEquals("1", cols[6]);
+        assertEquals("0", cols[7]);
+        assertEquals("\\N", cols[8]);
+        assertEquals("g\\\\x", cols[10]);
     }
 }

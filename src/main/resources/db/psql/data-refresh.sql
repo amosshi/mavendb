@@ -71,18 +71,6 @@ CREATE INDEX index_fname  ON gav (file_name);
 SELECT clock_timestamp() || ' Table gav create index index_fname finished' AS status;
 
 -- ============================================================
--- Fix Tomcat zip.sha512 → zip
--- ============================================================
-
-UPDATE gav
-SET file_extension = 'zip'
-WHERE group_id = 'org.apache.tomcat'
-  AND artifact_id = 'tomcat'
-  AND file_extension = 'zip.sha512';
-
-SELECT clock_timestamp() || ' Table gav Fix org.apache.tomcat/tomcat/zip.sha512 finished' AS status;
-
--- ============================================================
 -- Refresh table: g
 -- ============================================================
 

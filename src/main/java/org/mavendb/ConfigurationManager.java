@@ -145,16 +145,15 @@ class ConfigurationManager {
 
         // Initialize MySQL connection properties with defaults
         mysqlConnectionProps.setProperty("allowPublicKeyRetrieval", "true");
-        mysqlConnectionProps.setProperty("cachePrepStmts", "true");
-        mysqlConnectionProps.setProperty("rewriteBatchedStatements", "true");
-        // Server session variables for bulk load; unique_checks is not a Connector/J property, so it must go here
-        mysqlConnectionProps.setProperty("sessionVariables", "unique_checks=0,foreign_key_checks=0");
-        // No protocol compression: the DB is local, compression only costs CPU on both sides
-        mysqlConnectionProps.setProperty("useCompression", "false");
+        mysqlConnectionProps.setProperty("characterEncoding", "UTF-8");
+        mysqlConnectionProps.setProperty("connectionCollation", "utf8mb4_bin");
+        // Batches are bulk loaded with LOAD DATA LOCAL INFILE, streamed from memory (see DatabaseRepository.storeCopyData).
+        // The driver only honours the in-memory stream with allowLoadLocalInfile=true; allowLoadLocalInfileInPath
+        // ignores it and opens a real file. It lets the server ask for client files: connect only to your own server.
+        // The server side needs --local_infile=1, see docker/compose-mysql.yml.
+        mysqlConnectionProps.setProperty("allowLoadLocalInfile", "true");
         mysqlConnectionProps.setProperty("useLocalSessionState", "true");
-        mysqlConnectionProps.setProperty("useServerPrepStmts", "false");
-        mysqlConnectionProps.setProperty("useSSL", "false");
-        mysqlConnectionProps.setProperty("zeroDateTimeBehavior", "CONVERT_TO_NULL");
+        mysqlConnectionProps.setProperty("sslMode", "DISABLED");
 
         mysqlConnectionProps.setProperty("user", this.getDatabaseUser(CONFIG_MYSQL_USER));
         mysqlConnectionProps.setProperty("password", this.getDatabasePassword(CONFIG_MYSQL_PASSWORD));

@@ -1,35 +1,18 @@
 --
--- Correct data records
---
--- Maven Central index data has bugs, we will fix theose data we are using whenver found.
+-- Post-load steps, run after all gav rows are written:
+--   1. Build the secondary indexes of gav (deferred so the bulk load only maintains the primary key)
+--   2. Refresh the summary tables g (per group) and ga (per group + artifact) from gav
+--   3. Re-enable the InnoDB redo log disabled by create.sql
 --
 
 USE mavendb;
 select concat(now(), ' Started');
 
---
--- Refresh the counter tables after updated the latest tgav
---
-
-
--- Fix data for: `group_id` = 'org.apache.tomcat' AND `artifact_id` = 'tomcat'
---   Problem        : after 2020-12-03/9.0.41 the ArtifactInfo only contains record for 'zip.sha512' but no data for the "zip" file
---   Problem Example: https://repo1.maven.org/maven2/org/apache/tomcat/tomcat/9.0.41/  'tomcat-9.0.41.zip.sha512' exits but 'tomcat-9.0.41.zip' is missing
---   Solution       : We convert the current 'zip.sha512' record as 'zip'
-
-UPDATE gav
-SET   file_extension = 'zip'
-WHERE group_id       = 'org.apache.tomcat'
-  AND artifact_id    = 'tomcat'
-  AND file_extension = 'zip.sha512'
-;
-
-select concat(now(), ' Table gav Fix org.apache.tomcat/tomcat/zip.sha512 finished');
-
-
+-- Both indexes in one ALTER TABLE: built from a single parallel scan of gav
 ALTER TABLE gav
 ADD INDEX index_gav (group_id, artifact_id, artifact_version),
 ADD INDEX index_fname (file_name);
+select concat(now(), ' Table gav create index finished');
 
 
 -- Refresh data for table g
@@ -41,7 +24,7 @@ INSERT INTO    g (
   version_seq_max,
   file_modified_max           )
 SELECT
-  distinct group_id,
+  group_id,
   count(DISTINCT artifact_version) AS artifact_version_counter,
   count(DISTINCT major_version)    AS major_version_counter,
   max(version_seq)                 AS version_seq_max,
@@ -61,7 +44,7 @@ INSERT INTO    ga (
   version_seq_max,
   file_modified_max            )
 SELECT 
-  distinct group_id, artifact_id,
+  group_id, artifact_id,
   count(DISTINCT artifact_version) AS artifact_version_counter,
   count(DISTINCT major_version)    AS major_version_counter,
   max(version_seq)                 AS version_seq_max,
@@ -71,3 +54,9 @@ GROUP BY group_id, artifact_id
 ORDER BY group_id, artifact_id
 ;
 select concat(now(), ' Table ga refresh data finished');
+
+-- Re-enable InnoDB redo logging, disabled by create.sql for the bulk load.
+--   Without redo, any unclean shutdown (crash, OOM kill, docker stop timeout) corrupts the instance.
+--   Enabling it forces a checkpoint, so the loaded data is crash safe from here on.
+ALTER INSTANCE ENABLE INNODB REDO_LOG;
+select concat(now(), ' InnoDB redo log enabled');

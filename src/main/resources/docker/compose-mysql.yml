@@ -17,61 +17,51 @@ services:
     pull_policy: always
     # Buffer Pool Settings based on OS RAM Size
     #   OS RAM :  innodb_buffer_pool_size
-    #    64 GB                        40G
-    #   128 GB                        80G
+    #    64 GB                        32G
+    #   128 GB                        64G
     #
-    # innodb_flush_log_at_trx_commit:
-    #   For batch operations where absolute ACID compliance for every single intermediate write is not critical, setting this to 0 or 2 can improve write performance, though at the risk of losing a few seconds of data in a crash.
     # max_allowed_packet:
     #   Set max_allowed_packet = 1G, This is the safest and most future‑proof value. MySQL supports up to 1GB for this variable.
+    #
+    # local_infile=1:
+    #   Required: the loader stores gav with LOAD DATA LOCAL INFILE (client side: allowLoadLocalInfile in ConfigurationManager.java)
     command:
-      --bulk_insert_buffer_size=128M
       --character-set-server=utf8mb4
       --collation-server=utf8mb4_bin
-      --default-time-zone='+00:00'
       --disable-log-bin
       --group_concat_max_len=52428800
       --innodb_adaptive_hash_index=OFF
-      --innodb_buffer_pool_size=80G
-      --innodb_ddl_buffer_size=1G
+      --innodb_buffer_pool_size=64G
+      --innodb_ddl_buffer_size=4G
       --innodb_ddl_threads=16
       --innodb_doublewrite=0
-      --innodb_file_per_table=1
-      --innodb_flush_log_at_timeout=4
-      --innodb_flush_log_at_trx_commit=2
       --innodb_flush_method=O_DIRECT
       --innodb_io_capacity=10000
       --innodb_io_capacity_max=20000
-      --innodb_log_buffer_size=256M
+      --innodb_parallel_read_threads=16
       --innodb_read_io_threads=16
-      --innodb_redo_log_capacity=16G
-      --innodb_sort_buffer_size=512M
+      --innodb_sort_buffer_size=64M
       --innodb_write_io_threads=16
       --local_infile=1
-      --log_queries_not_using_indexes=1
-      --long_query_time=2
       --max_allowed_packet=1G
-      --max_connections=32
-      --max_heap_table_size=5G
-      --read_rnd_buffer_size=512M
-      --slow_query_log=1
+      --max_connections=80
+      --read_rnd_buffer_size=128M
       --skip-name-resolve
-      --sort_buffer_size=512M
+      --sort_buffer_size=128M
       --tmp_table_size=5G
       --temptable_max_ram=5G
     hostname: mavendb-mysql
     container_name: mavendb-mysql
     restart: always
+    # Flushing a 64G buffer pool on shutdown takes longer than docker's default 10s.
+    # A SIGKILL'ed server must recover from redo; while redo is disabled (during the load) it cannot.
+    stop_grace_period: 5m
     environment:
       MYSQL_DATABASE: 'mavendb'
       MYSQL_USER: 'mavendbadmin'
       # Passwords are subjected to be changed based on your requirement
       MYSQL_PASSWORD: "${MYSQL_ROOT_PASSWORD}"
       MYSQL_ROOT_PASSWORD: "${MYSQL_ROOT_PASSWORD}"
-    deploy:
-      resources:
-        reservations:
-          memory: 10240M
     expose:
       # Opens port 3306 on the container inside the docker network
       - '3306'

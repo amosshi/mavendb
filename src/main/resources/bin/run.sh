@@ -60,7 +60,7 @@ JAVA_OPTS=" \
  -XX:+DebugNonSafepoints \
  -XX:+UseCompactObjectHeaders \
  -XX:FlightRecorderOptions=repository=../log \
- '-XX:StartFlightRecording=disk=true,dumponexit=true,filename=../log/profile.jfr,name=Profiling,settings=profile,method-timing=org.mavendb.DatabaseRepository::storeSQL;org.mavendb.DatabaseRepository::storePsqlCopy;org.mavendb.DatabaseRepository::storeMongoDB;org.mavendb.DatabaseRepository::executeSQLScript;org.mavendb.DatabaseRepository::createIndexesMongoDB' \
+ '-XX:StartFlightRecording=disk=true,dumponexit=true,filename=../log/profile.jfr,name=Profiling,settings=profile,method-timing=org.mavendb.DatabaseRepository::storeSQL;org.mavendb.DatabaseRepository::storeCopyData;org.mavendb.DatabaseRepository::storeMongoDB;org.mavendb.DatabaseRepository::executeSQLScript;org.mavendb.DatabaseRepository::createIndexesMongoDB' \
 "
 
 RUN_CMD="java $JAVA_OPTS -Xmx32g -server -jar $BASEDIR/../mavendb.jar -f $1 -d $2"

@@ -9,6 +9,8 @@ import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
+import java.sql.SQLWarning;
+import java.sql.Statement;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -21,6 +23,8 @@ import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoClients;
 import com.mongodb.client.model.Indexes;
 import com.mongodb.client.model.InsertManyOptions;
+
+import com.mysql.cj.jdbc.JdbcStatement;
 
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 
@@ -102,11 +106,20 @@ class DatabaseRepository implements AutoCloseable {
         require_bundle, export_service,
         json""";
 
-    /** PostgreSQL bulk load statement; the rows are sent in COPY text format, see {@link #toPsqlCopyData(List)}. */
+    /** PostgreSQL bulk load statement; the rows are sent in COPY text format, see {@link #toCopyData(List, DatabaseType)}. */
     private static final String PSQL_COPY_GAV = "COPY mavendb.gav (" + GAV_COLUMNS + ") FROM STDIN";
 
     /** Buffer size used to stream COPY data to the server. */
     private static final int PSQL_COPY_BUFFER_SIZE = 1 << 20;
+
+    /**
+     * MySQL bulk load statement, MySQL's counterpart of COPY. The FIELDS/LINES options are MySQL's defaults,
+     * spelled out because the data is the same COPY text format, see {@link #toCopyData(List, DatabaseType)}.
+     * The file name is a placeholder: the rows are streamed from memory by
+     * {@link JdbcStatement#setLocalInfileInputStream(java.io.InputStream)}.
+     */
+    private static final String MYSQL_LOAD_DATA_GAV = "LOAD DATA LOCAL INFILE 'gav.tsv' INTO TABLE gav CHARACTER SET utf8mb4 "
+        + "FIELDS TERMINATED BY '\\t' ESCAPED BY '\\\\' LINES TERMINATED BY '\\n' (" + GAV_COLUMNS + ")";
 
     /** Timeout for checking an idle connection is still alive before reuse. */
     private static final int CONNECTION_VALID_TIMEOUT_SECONDS = 2;
@@ -237,26 +250,31 @@ class DatabaseRepository implements AutoCloseable {
     }
 
     /**
-     * Store a PostgreSQL batch with {@code COPY ... FROM STDIN}.
+     * Store a batch of rows in COPY text format with the database's bulk load statement:
+     * {@code COPY ... FROM STDIN} for PostgreSQL, {@code LOAD DATA LOCAL INFILE} for MySQL.
      *
-     * <p>COPY is parsed and inserted by the server as one stream: no per-row Bind/Execute round trip
-     * and no per-row executor start-up, which is what a batched INSERT costs.
+     * <p>The server parses and inserts the rows as one stream: no per-row Bind/Execute round trip
+     * (PostgreSQL), no multi-row INSERT text to build in the driver and parse on the server (MySQL).
      *
-     * @param copyData Rows in COPY text format, see {@link #toPsqlCopyData(List)}
+     * @param copyData Rows in COPY text format, see {@link #toCopyData(List, DatabaseType)}
      * @param size Number of rows in {@code copyData}, for checking and logging
      * @param counter Record counter for logging
      * @throws IllegalStateException if the batch could not be written; the transaction is rolled back
      */
-    protected void storePsqlCopy(byte[] copyData, int size, final long counter) {
+    protected void storeCopyData(byte[] copyData, int size, final long counter) {
         Connection conn = null;
         try {
             conn = borrowConnection();
             LocalDateTime begin = LocalDateTime.now();
 
-            long copied = conn.unwrap(PGConnection.class).getCopyAPI()
-                .copyIn(PSQL_COPY_GAV, new ByteArrayInputStream(copyData), PSQL_COPY_BUFFER_SIZE);
-            if (copied != size) {
-                throw new SQLException("COPY wrote " + copied + " rows, expected " + size);
+            long loaded = switch (this.dbType) {
+                case PSQL -> conn.unwrap(PGConnection.class).getCopyAPI()
+                    .copyIn(PSQL_COPY_GAV, new ByteArrayInputStream(copyData), PSQL_COPY_BUFFER_SIZE);
+                case MYSQL -> loadDataMysql(conn, copyData);
+                default -> throw new IllegalStateException("Bulk load is not supported for " + this.dbType);
+            };
+            if (loaded != size) {
+                throw new SQLException("Bulk load wrote " + loaded + " rows, expected " + size);
             }
             conn.commit();
 
@@ -269,7 +287,7 @@ class DatabaseRepository implements AutoCloseable {
                     new Object[]{counter, duration.toSeconds(), size, copyData.length});
         } catch (SQLException | IOException e) {
             // Fail the run instead of silently losing the batch
-            throw new IllegalStateException("PostgreSQL COPY failed for records counter=" + counter, e);
+            throw new IllegalStateException(this.dbType + " bulk load failed for records counter=" + counter, e);
         } finally {
             // Failure: discard the connection, its state is unknown
             if (conn != null) {
@@ -279,17 +297,42 @@ class DatabaseRepository implements AutoCloseable {
     }
 
     /**
-     * Encode prepared rows in PostgreSQL COPY text format (tab separated, {@code \N} for null), UTF-8.
+     * Run {@code LOAD DATA LOCAL INFILE} with the rows streamed from memory.
+     *
+     * <p>With LOCAL, MySQL turns data errors (truncation, bad values, duplicate keys) into warnings and
+     * carries on, so any warning fails the batch instead of silently storing altered rows.
+     *
+     * @return Number of rows loaded
+     */
+    private static long loadDataMysql(Connection conn, byte[] copyData) throws SQLException {
+        try (Statement stmt = conn.createStatement()) {
+            stmt.unwrap(JdbcStatement.class).setLocalInfileInputStream(new ByteArrayInputStream(copyData));
+            long loaded = stmt.executeLargeUpdate(MYSQL_LOAD_DATA_GAV);
+            SQLWarning warning = stmt.getWarnings();
+            if (warning != null) {
+                throw new SQLException("LOAD DATA reported warnings, first: " + warning.getMessage(), warning);
+            }
+            return loaded;
+        }
+    }
+
+    /**
+     * Encode prepared rows in COPY text format (tab separated, {@code \N} for null), UTF-8.
+     *
+     * <p>PostgreSQL COPY and MySQL LOAD DATA read the same format and escapes; only booleans differ:
+     * {@code t}/{@code f} for PostgreSQL, {@code 1}/{@code 0} for the MySQL BOOLEAN (TINYINT) columns.
      *
      * <p>Thread safe: called on the conversion threads, so the writer only streams bytes.
      *
-     * @param rows Rows prepared by {@link #toSQLRow(Document)} for {@link DatabaseType#PSQL}
-     * @return COPY data for {@link #storePsqlCopy(byte[], int, long)}
+     * @param rows Rows prepared by {@link #toSQLRow(Document)}
+     * @param dbType {@link DatabaseType#PSQL} or {@link DatabaseType#MYSQL}
+     * @return COPY data for {@link #storeCopyData(byte[], int, long)}
      */
-    protected static byte[] toPsqlCopyData(List<SqlRow> rows) {
+    protected static byte[] toCopyData(List<SqlRow> rows, DatabaseType dbType) {
+        boolean numericBoolean = dbType == DatabaseType.MYSQL;
         StringBuilder sb = new StringBuilder(rows.size() * 512);
         for (SqlRow row : rows) {
-            row.appendCopyText(sb);
+            row.appendCopyText(sb, numericBoolean);
         }
         return sb.toString().getBytes(StandardCharsets.UTF_8);
     }
@@ -544,9 +587,11 @@ class DatabaseRepository implements AutoCloseable {
         }
 
         /**
-         * Append this row as one line of PostgreSQL COPY text format.
+         * Append this row as one line of COPY text format.
+         *
+         * @param numericBoolean {@code true} to write booleans as {@code 1}/{@code 0} (MySQL), else {@code t}/{@code f}
          */
-        void appendCopyText(StringBuilder sb) {
+        void appendCopyText(StringBuilder sb, boolean numericBoolean) {
             for (int i = 0; i < SQL_IDX_JSON; i++) {
                 if (i > 0) {
                     sb.append('\t');
@@ -555,7 +600,7 @@ class DatabaseRepository implements AutoCloseable {
                 if (value == null) {
                     sb.append("\\N");
                 } else if (value instanceof Boolean b) {
-                    sb.append(b ? 't' : 'f');
+                    sb.append(numericBoolean ? (b ? '1' : '0') : (b ? 't' : 'f'));
                 } else if (value instanceof String str) {
                     appendCopyEscaped(sb, str);
                 } else {
@@ -568,6 +613,7 @@ class DatabaseRepository implements AutoCloseable {
 
         /**
          * Escape the characters COPY text format treats specially: backslash, and the row and column delimiters.
+         * MySQL LOAD DATA (ESCAPED BY '\\') decodes these the same way.
          */
         static void appendCopyEscaped(StringBuilder sb, String str) {
             int len = str.length();

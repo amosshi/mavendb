@@ -103,14 +103,14 @@ class MvnScanner {
     }
 
     /**
-     * One converted batch, ready to write: documents for MongoDB, COPY data for PostgreSQL,
-     * prepared rows for the other SQL databases.
+     * One converted batch, ready to write: documents for MongoDB, COPY data for PostgreSQL and MySQL,
+     * prepared rows for SQLite.
      *
      * @param counter Sequence number of the last record, for logging
      * @param size Number of records to write
      * @param documents MongoDB documents, otherwise <code>null</code>
-     * @param rows MySQL and SQLite rows, otherwise <code>null</code>
-     * @param copyData PostgreSQL rows in COPY text format, otherwise <code>null</code>
+     * @param rows SQLite rows, otherwise <code>null</code>
+     * @param copyData PostgreSQL and MySQL rows in COPY text format, otherwise <code>null</code>
      */
     private record Batch(long counter, int size, List<Document> documents, List<DatabaseRepository.SqlRow> rows,
             byte[] copyData) {
@@ -361,9 +361,9 @@ class MvnScanner {
         } catch (SQLException e) {
             throw new IllegalStateException("SQL row preparation failed for records counter=" + counter, e);
         }
-        if (this.dbType == DatabaseType.PSQL) {
+        if (this.dbType == DatabaseType.PSQL || this.dbType == DatabaseType.MYSQL) {
             // Encode here, on the conversion thread, so the writer only streams bytes
-            return new Batch(counter, rows.size(), null, null, DatabaseRepository.toPsqlCopyData(rows));
+            return new Batch(counter, rows.size(), null, null, DatabaseRepository.toCopyData(rows, this.dbType));
         }
         return new Batch(counter, rows.size(), null, rows, null);
     }
@@ -443,8 +443,8 @@ class MvnScanner {
         }
         try {
             switch (this.dbType) {
-                case MYSQL, SQLITE -> this.databaseRepository.storeSQL(batch.rows(), batch.counter());
-                case PSQL -> this.databaseRepository.storePsqlCopy(batch.copyData(), batch.size(), batch.counter());
+                case SQLITE -> this.databaseRepository.storeSQL(batch.rows(), batch.counter());
+                case MYSQL, PSQL -> this.databaseRepository.storeCopyData(batch.copyData(), batch.size(), batch.counter());
                 case MONGODB -> this.databaseRepository.storeMongoDB(batch.documents(), batch.counter(), this.indexId);
             }
         } finally {
