@@ -1,0 +1,52 @@
+# mavendb-api settings. Every value can be overridden without rebuilding:
+#   environment variable:  MAVENDB_API_RATE_LIMIT_PER_CLIENT_PER_MINUTE=120
+#   command line:          java -jar mavendb-api.jar --mavendb.api.rate-limit.per-client-per-minute=120
+#   file next to the jar:  ./application.yml or ./config/application.yml
+
+mavendb:
+  api:
+    sqlite:
+      # The SQLite file built by mavendb-loader (target: sqlite); opened read-only
+      path: mavendb.sqlite
+      pool-size: 8
+      # Page cache per connection: 8 x 32 MiB
+      cache-size-kib: 32768
+      # Memory map up to 1 GiB of the file; the OS page cache does the rest
+      mmap-size: 1073741824
+
+    # Defaults sized for a small VPS (2-8 vCores). Each lookup is an index read of well under a millisecond,
+    # so the server limit is about protecting the box, not about SQLite.
+    rate-limit:
+      enabled: true
+      # A person or a build script: 60 requests a minute, bursts of 30
+      per-client-per-minute: 60
+      per-client-burst: 30
+      # All clients together
+      global-per-second: 50
+      global-burst: 100
+      # Memory bound for the per-client buckets (about 100 bytes each)
+      max-tracked-clients: 100000
+
+server:
+  port: 8080
+  # Only a reverse proxy on this host (Caddy / nginx, which terminates HTTPS) talks to the API
+  address: 127.0.0.1
+  # Take the client IP from X-Forwarded-For, trusted from internal addresses only (Tomcat RemoteIpValve):
+  # needed so the rate limit sees the real client, not the proxy
+  forward-headers-strategy: native
+  error:
+    include-message: always
+  compression:
+    enabled: true
+
+spring:
+  application:
+    name: mavendb-api
+  main:
+    banner-mode: off
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
