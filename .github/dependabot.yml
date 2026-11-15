@@ -1,0 +1,42 @@
+version: 2
+updates:
+  # Java dependencies and Maven plugins in pom.xml
+  - package-ecosystem: "maven"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "UTC"
+    open-pull-requests-limit: 10
+    labels: ["dependencies", "java"]
+    commit-message:
+      prefix: "deps"
+      include: "scope"
+    groups:
+      # One PR for all minor/patch bumps instead of a dozen separate PRs
+      maven-minor-patch:
+        update-types: ["minor", "patch"]
+      # JDBC drivers / DB clients often move together
+      database-drivers:
+        patterns:
+          - "org.xerial:*"
+          - "org.postgresql:*"
+          - "com.mysql:*"
+          - "org.mariadb.jdbc:*"
+          - "org.mongodb:*"
+          - "org.duckdb:*"
+          - "org.opensearch*"
+    # ignore:
+    #   - dependency-name: "org.apache.maven.indexer:*"
+    #     update-types: ["version-update:semver-major"]
+
+  # Docker images in the compose files
+  - package-ecosystem: "docker-compose"
+    directory: "/src/main/resources/docker"
+    schedule:
+      interval: "monthly"
+    labels: ["dependencies", "docker"]
+    groups:
+      docker-images:
+        patterns: ["*"]
