@@ -133,7 +133,7 @@ It downloads into this module’s target/ folder:
 Requriments
 
 * OpenJDK `25` or later
-* Maven `3.9.3` or later
+* Maven: bundled wrapper `./mvnw` downloads the pinned version (see `.mvn/wrapper/maven-wrapper.properties`)
 * Optionally: `graphviz` for code relation diagram
   * MacOS: `sudo apt install graphviz -y`
   * Ubuntu: `brew install graphviz`
@@ -300,7 +300,7 @@ Maven Settings
 ```
 
 Publish site
-* `mvn clean site site:stage scm-publish:publish-scm`
+* `./mvnw clean site site:stage scm-publish:publish-scm`
 
 
 ### Sample Data

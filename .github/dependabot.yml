@@ -40,3 +40,13 @@ updates:
     groups:
       docker-images:
         patterns: ["*"]
+
+  # Actions used in .github/workflows
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    labels: ["dependencies", "github-actions"]
+    groups:
+      github-actions:
+        patterns: ["*"]
