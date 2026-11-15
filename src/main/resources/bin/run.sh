@@ -10,9 +10,12 @@
 #   ./run.sh <path_to_repos_folder> <db_type>
 # Example:
 #   ./run.sh file:///path/to/central-index/repo.maven.apache.org/maven2/.index/ mongodb
+#   ./run.sh file:///path/to/central-index/repo.maven.apache.org/maven2/.index/ opensearch
 #   ./run.sh file:///path/to/central-index/repo.maven.apache.org/maven2/.index/ mysql
+#   ./run.sh file:///path/to/central-index/repo.maven.apache.org/maven2/.index/ mariadb
 #   ./run.sh file:///path/to/central-index/repo.maven.apache.org/maven2/.index/ psql
 #   ./run.sh file:///path/to/central-index/repo.maven.apache.org/maven2/.index/ sqlite
+#   ./run.sh file:///path/to/central-index/repo.maven.apache.org/maven2/.index/ duckdb
 #
 
 # Function
@@ -59,16 +62,32 @@ JAVA_OPTS=" \
  -XX:+PrintNMTStatistics \
  -XX:+DebugNonSafepoints \
  -XX:+UseCompactObjectHeaders \
+ --enable-native-access=ALL-UNNAMED \
  -XX:FlightRecorderOptions=repository=../log \
  '-XX:StartFlightRecording=disk=true,dumponexit=true,filename=../log/profile.jfr,name=Profiling,settings=profile,method-timing=org.mavendb.DatabaseRepository::storeSQL;org.mavendb.DatabaseRepository::storeCopyData;org.mavendb.DatabaseRepository::storeMongoDB;org.mavendb.DatabaseRepository::executeSQLScript;org.mavendb.DatabaseRepository::createIndexesMongoDB' \
 "
 
+# DuckDB is a local file: start from an empty database, like a refreshed container
+if [ "$2" = "duckdb" ]; then
+  rm -rf mavendb.duckdb mavendb.duckdb.wal mavendb.duckdb.tmp
+fi
+
 RUN_CMD="java $JAVA_OPTS -Xmx32g -server -jar $BASEDIR/../mavendb.jar -f $1 -d $2"
 echo "$(timestamp) $RUN_CMD"
 eval               $RUN_CMD
+RUN_STATUS=$?
+
+# A failed load leaves an incomplete database: do not export it, and pass the failure on to bin/pipeline.sh
+if [ $RUN_STATUS -ne 0 ]; then
+  echo "$(timestamp) Load into $2 failed with exit code $RUN_STATUS, see the log folder. Export skipped."
+  exit $RUN_STATUS
+fi
 
 if [ "$2" = "sqlite" ]; then
   zip ../var/mavendb.sqlite.zip mavendb.sqlite
+
+elif [ "$2" = "duckdb" ]; then
+  zip ../var/mavendb.duckdb.zip mavendb.duckdb
 
 elif [ "$2" = "psql" ]; then
   # Install PostgreSQL client if not already installed
@@ -94,11 +113,27 @@ elif [ "$2" = "mysql" ]; then
 
   mysqldump --host=127.0.0.1 --port=3306 mavendb | gzip > ../var/mavendb-mysql.sql.gz
 
+elif [ "$2" = "mariadb" ]; then
+  # Dump with the client inside the container: nothing to install on the host
+  sudo docker exec mavendb-mariadb sh -c 'mariadb-dump -uroot -p"$MARIADB_ROOT_PASSWORD" mavendb' | gzip > ../var/mavendb-mariadb.sql.gz
+
 elif [ "$2" = "mongodb" ]; then
   sudo docker exec -t mavendb-mongo mongodump --host mavendb-mongo --username root --password 123456 --authenticationDatabase admin --authenticationMechanism SCRAM-SHA-256 --db mavendb --archive | gzip > ../var/mavendb-mongo.archive.gz
 
+elif [ "$2" = "opensearch" ]; then
+  # Snapshot the index into the container's snapshot repository (path.repo in compose-opensearch.yml),
+  # then stream the repository out as a tar file; curl runs inside the container, nothing to install on the host
+  OPENSEARCH_CURL="sudo docker exec mavendb-opensearch curl -sS --fail-with-body"
+  $OPENSEARCH_CURL -X PUT localhost:9200/_snapshot/mavendb -H 'Content-Type: application/json' \
+    -d '{"type": "fs", "settings": {"location": "/usr/share/opensearch/snapshots/mavendb"}}'
+  # Only the loaded indices: not the system indices (names starting with a dot), not the query insights
+  # indices of the bundled plugin (top_queries-<date>), not the cluster state
+  $OPENSEARCH_CURL -X PUT "localhost:9200/_snapshot/mavendb/mavendb?wait_for_completion=true" -H 'Content-Type: application/json' \
+    -d '{"indices": "*,-.*,-top_queries-*", "include_global_state": false}'
+  sudo docker exec mavendb-opensearch tar cf - -C /usr/share/opensearch/snapshots mavendb > ../var/mavendb-opensearch-snapshot.tar
+
 else
-  echo "$(timestamp) Invalid db type: $2. Expected sqlite, psql, mysql, or mongodb."
+  echo "$(timestamp) Invalid db type: $2. Expected sqlite, duckdb, psql, mysql, mariadb, mongodb, or opensearch."
   exit 1
 fi
 

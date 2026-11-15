@@ -10,6 +10,7 @@ import java.nio.file.Path;
 import java.sql.SQLException;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.Arrays;
 import java.util.Properties;
 import java.util.logging.FileHandler;
 import java.util.logging.Level;
@@ -34,6 +35,15 @@ public class Main {
      * Logger.
      */
     private static final Logger LOG = Logger.getLogger(Main.class.getName());
+
+    /** Exit code: success, or help printed. */
+    static final int EXIT_OK = 0;
+
+    /**
+     * Exit code: a bad command line argument or index folder, nothing was loaded.
+     * A failed load exits with code 1, from the uncaught exception.
+     */
+    static final int EXIT_INVALID_ARGUMENTS = 2;
 
     /**
      * Configuration file name: <code>config.properties</code>.
@@ -64,11 +74,35 @@ public class Main {
      * @throws SQLException Exception
      */
     public static void main(String[] args) throws IOException, SQLException {
+        int exitCode = run(args);
+        if (exitCode != EXIT_OK) {
+            System.exit(exitCode);
+        }
+    }
+
+    /**
+     * Run the application.
+     *
+     * <p>A failed load is thrown, not returned: the JVM prints the stack trace and exits with code 1.
+     *
+     * @param args the command line arguments
+     * @return {@link #EXIT_OK}, or {@link #EXIT_INVALID_ARGUMENTS} when nothing was loaded because of a bad argument
+     * @throws IOException Exception
+     * @throws SQLException Exception
+     */
+    private static int run(String[] args) throws IOException, SQLException {
 
         // Log formatter.
         // @see https://stackoverflow.com/questions/194765/how-do-i-get-java-logging-output-to-appear-on-a-single-line
         System.setProperty("java.util.logging.SimpleFormatter.format", "%1$tY-%1$tm-%1$td %1$tH:%1$tM:%1$tS %4$s %2$s %5$s%6$s%n");
         LOG.log(Level.INFO, "Started");
+
+        // Help first: the parser rejects a command line without the required -d and -f options
+        if (Arrays.asList(args).contains("-" + CommandOptions.OPTION_HELP.getOpt())
+            || Arrays.asList(args).contains("--" + CommandOptions.OPTION_HELP.getLongOpt())) {
+            Main.printHelp();
+            return EXIT_OK;
+        }
 
         CommandLine line;
         try {
@@ -78,19 +112,19 @@ public class Main {
             // oops, something went wrong
             LOG.log(Level.SEVERE, "Command line parameter parsing failed.", exp);
             Main.printHelp();
-            return;
+            return EXIT_INVALID_ARGUMENTS;
         }
 
         if (line.hasOption(CommandOptions.OPTION_HELP.getLongOpt())) {
             Main.printHelp();
-            return;
+            return EXIT_OK;
         }
 
         String dbTypeStringValue = line.getOptionValue(CommandOptions.OPTION_DB_TYPE_LONGOPT);
         if (dbTypeStringValue.isBlank()) {
             LOG.log(Level.SEVERE, "Database type is required");
             Main.printHelp();
-            return;
+            return EXIT_INVALID_ARGUMENTS;
         }
 
         String dbTypeString = dbTypeStringValue.toUpperCase();
@@ -100,16 +134,16 @@ public class Main {
         } catch (IllegalArgumentException _) {
             LOG.log(Level.SEVERE, "Unsupported database type: " + dbTypeString);
             Main.printHelp();
-            return;
+            return EXIT_INVALID_ARGUMENTS;
         }
 
-        Main.setupFileLogging(dbType);
+        String logBaseName = Main.setupFileLogging(dbType);
 
         String reposFolder = line.getOptionValue(CommandOptions.OPTION_REPOS_FOLDER_LONGOPT);
         if (reposFolder.isBlank()) {
             LOG.log(Level.SEVERE, "Repository folder is required");
             Main.printHelp();
-            return;
+            return EXIT_INVALID_ARGUMENTS;
         }
 
         MvnScanner scanner;
@@ -117,13 +151,22 @@ public class Main {
             scanner = MvnScanner.create(reposFolder, dbType);
         } catch (IllegalArgumentException e) {
             LOG.log(Level.SEVERE, "Invalid repository folder: " + reposFolder, e);
-            return;
+            return EXIT_INVALID_ARGUMENTS;
         }
 
-        scanner.perform(loadConfig());
+        RunSummary summary = new RunSummary(dbType, reposFolder, logBaseName + ".log");
+        try {
+            scanner.perform(loadConfig(), summary);
+            summary.succeeded();
+        } catch (IOException | SQLException | RuntimeException e) {
+            summary.failed(e);
+            throw e;
+        } finally {
+            summary.write(Path.of(AppPaths.getFileName(AppPaths.DIR_LOG, logBaseName + ".json")));
+        }
 
         LOG.log(Level.INFO, "Finished");
-
+        return EXIT_OK;
     }
 
     /**
@@ -131,11 +174,13 @@ public class Main {
      * <code>log/&lt;timestamp&gt;-&lt;dbtype&gt;.log</code> next to the jar file.
      *
      * @param dbType Database type, used as part of the log file name
+     * @return Base name of the log file, <code>&lt;timestamp&gt;-&lt;dbtype&gt;</code>, shared by the run summary JSON
      * @throws IOException Failed to create the log folder or log file
      */
-    private static void setupFileLogging(DatabaseType dbType) throws IOException {
+    private static String setupFileLogging(DatabaseType dbType) throws IOException {
         String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd.HHmmss"));
-        String logFileName = AppPaths.getFileName(AppPaths.DIR_LOG, timestamp + "-" + dbType.name().toLowerCase() + ".log");
+        String logBaseName = timestamp + "-" + dbType.name().toLowerCase();
+        String logFileName = AppPaths.getFileName(AppPaths.DIR_LOG, logBaseName + ".log");
         Files.createDirectories(Path.of(AppPaths.getFileName(AppPaths.DIR_LOG, "")));
 
         FileHandler fileHandler = new FileHandler(logFileName, false);
@@ -144,6 +189,7 @@ public class Main {
         Logger.getLogger("").addHandler(fileHandler);
 
         LOG.log(Level.INFO, "Log file: {0}", logFileName);
+        return logBaseName;
     }
 
     /**

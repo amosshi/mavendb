@@ -19,17 +19,28 @@ class ConfigurationManager {
     private static final String CONFIG_MYSQL_URL = "org.mavendb.mysql.url";
     private static final String CONFIG_MYSQL_USER = "org.mavendb.mysql.user";
     private static final String CONFIG_MYSQL_PASSWORD = "org.mavendb.mysql.password";
+    private static final String CONFIG_MARIADB_URL = "org.mavendb.mariadb.url";
+    private static final String CONFIG_MARIADB_USER = "org.mavendb.mariadb.user";
+    private static final String CONFIG_MARIADB_PASSWORD = "org.mavendb.mariadb.password";
     private static final String CONFIG_PSQL_URL = "org.mavendb.psql.url";
     private static final String CONFIG_PSQL_USER = "org.mavendb.psql.user";
     private static final String CONFIG_PSQL_PASSWORD = "org.mavendb.psql.password";
     private static final String CONFIG_SQLITE_URL = "org.mavendb.sqlite.url";
+    private static final String CONFIG_DUCKDB_URL = "org.mavendb.duckdb.url";
     private static final String CONFIG_MONGODB_URL = "org.mavendb.mongodb.url";
+    private static final String CONFIG_OPENSEARCH_URL = "org.mavendb.opensearch.url";
+    private static final String CONFIG_OPENSEARCH_USER = "org.mavendb.opensearch.user";
+    private static final String CONFIG_OPENSEARCH_PASSWORD = "org.mavendb.opensearch.password";
 
     /* ------- Configuration Defaults ------- */
     protected static final String DATABASE_NAME = "mavendb";
     protected static final String DEFAULT_MYSQL_URL = "jdbc:mysql://localhost:3306/" + DATABASE_NAME;
+    /** Port 3307: see docker/compose-mariadb.yml, so MariaDB and MySQL do not clash. */
+    protected static final String DEFAULT_MARIADB_URL = "jdbc:mariadb://localhost:3307/" + DATABASE_NAME;
     protected static final String DEFAULT_PSQL_URL = "jdbc:postgresql://localhost:5432/" + DATABASE_NAME;
     protected static final String DEFAULT_SQLITE_URL = "jdbc:sqlite:" + DATABASE_NAME + ".sqlite";
+    protected static final String DEFAULT_DUCKDB_URL = "jdbc:duckdb:" + DATABASE_NAME + ".duckdb";
+    protected static final String DEFAULT_OPENSEARCH_URL = "http://localhost:9200";
 
     private static final int MIN_BATCH_SIZE = 100;
     private static final int MAX_BATCH_SIZE = 100_000;
@@ -40,10 +51,14 @@ class ConfigurationManager {
      */
     enum IntSetting {
         MYSQL_BATCH_SIZE("org.mavendb.mysql.batch.size", 50_000, MIN_BATCH_SIZE, MAX_BATCH_SIZE),
+        MARIADB_BATCH_SIZE("org.mavendb.mariadb.batch.size", 50_000, MIN_BATCH_SIZE, MAX_BATCH_SIZE),
         PSQL_BATCH_SIZE("org.mavendb.psql.batch.size", 50_000, MIN_BATCH_SIZE, MAX_BATCH_SIZE),
         /** For SQLite, 100k and 50k has similar performance. */
         SQLITE_BATCH_SIZE("org.mavendb.sqlite.batch.size", 100_000, MIN_BATCH_SIZE, MAX_BATCH_SIZE),
+        DUCKDB_BATCH_SIZE("org.mavendb.duckdb.batch.size", 100_000, MIN_BATCH_SIZE, MAX_BATCH_SIZE),
         MONGODB_BATCH_SIZE("org.mavendb.mongodb.batch.size", 20_000, MIN_BATCH_SIZE, MAX_BATCH_SIZE),
+        /** 10k documents is a bulk request of about 13 MB, within the 5-15 MB OpenSearch recommends. */
+        OPENSEARCH_BATCH_SIZE("org.mavendb.opensearch.batch.size", 10_000, MIN_BATCH_SIZE, MAX_BATCH_SIZE),
         /** Maximum concurrent writer threads; 4 gives good throughput without overwhelming the database. */
         THREAD_POOL_SIZE("org.mavendb.thread.pool.size", 4, 2, 64);
 
@@ -63,8 +78,10 @@ class ConfigurationManager {
     private final Properties config;
 
     protected final Properties mysqlConnectionProps = new Properties();
+    protected final Properties mariadbConnectionProps = new Properties();
     protected final Properties psqlConnectionProps = new Properties();
     protected final Properties sqliteConnectionProps = new Properties();
+    protected final Properties duckdbConnectionProps = new Properties();
 
     /** Parsed and validated integer settings, filled once in the constructor. */
     private final Map<IntSetting, Integer> intSettings = new EnumMap<>(IntSetting.class);
@@ -158,6 +175,15 @@ class ConfigurationManager {
         mysqlConnectionProps.setProperty("user", this.getDatabaseUser(CONFIG_MYSQL_USER));
         mysqlConnectionProps.setProperty("password", this.getDatabasePassword(CONFIG_MYSQL_PASSWORD));
 
+        // Initialize MariaDB connection properties (MariaDB Connector/J; utf8mb4 and no TLS are its defaults)
+        // Batches are bulk loaded with LOAD DATA LOCAL INFILE, streamed from memory, as for MySQL.
+        // It lets the server ask for client files: connect only to your own server.
+        // The server side needs --local_infile=1, see docker/compose-mariadb.yml.
+        mariadbConnectionProps.setProperty("allowLocalInfile", "true");
+
+        mariadbConnectionProps.setProperty("user", this.getDatabaseUser(CONFIG_MARIADB_USER));
+        mariadbConnectionProps.setProperty("password", this.getDatabasePassword(CONFIG_MARIADB_PASSWORD));
+
         // Initialize PSQL connection properties with defaults
         psqlConnectionProps.setProperty("ssl", "false");
         psqlConnectionProps.setProperty("synchronous_commit", "off");  // Improve performance by disabling synchronous commit
@@ -187,6 +213,12 @@ class ConfigurationManager {
         sqliteConnectionProps.setProperty("synchronous", "OFF");
         // Increase temp store to memory for faster operations
         sqliteConnectionProps.setProperty("temp_store", "MEMORY");
+
+        // Initialize DuckDB connection properties: DuckDB settings, applied when the database file is opened
+        //
+        // DuckDB runs in this JVM process, next to the -Xmx heap: cap its memory (default: 80% of the RAM).
+        // Aggregates larger than this spill to a temp directory next to the database file.
+        duckdbConnectionProps.setProperty("memory_limit", "32GB");
 
         // Parse and validate all integer settings once
         for (IntSetting setting : IntSetting.values()) {
@@ -223,6 +255,15 @@ class ConfigurationManager {
     }
 
     /**
+     * Get MariaDB URL from configuration.
+     *
+     * @return MariaDB connection URL
+     */
+    public String getMariadbUrl() {
+        return config.getProperty(CONFIG_MARIADB_URL, DEFAULT_MARIADB_URL);
+    }
+
+    /**
      * Get PostgreSQL URL from configuration.
      *
      * @return PostgreSQL connection URL
@@ -241,6 +282,15 @@ class ConfigurationManager {
     }
 
     /**
+     * Get DuckDB URL from configuration.
+     *
+     * @return DuckDB connection URL
+     */
+    public String getDuckdbUrl() {
+        return config.getProperty(CONFIG_DUCKDB_URL, DEFAULT_DUCKDB_URL);
+    }
+
+    /**
      * Get MongoDB URL from configuration.
      *
      * @return MongoDB connection URL
@@ -255,12 +305,57 @@ class ConfigurationManager {
     }
 
     /**
+     * Get OpenSearch URL from configuration.
+     *
+     * @return OpenSearch server URL, like {@code http://localhost:9200}
+     */
+    public String getOpensearchUrl() {
+        return config.getProperty(CONFIG_OPENSEARCH_URL, DEFAULT_OPENSEARCH_URL);
+    }
+
+    /**
+     * Get the OpenSearch user; blank (the default) for a server without the security plugin.
+     *
+     * @return OpenSearch user, or empty string
+     */
+    public String getOpensearchUser() {
+        return config.getProperty(CONFIG_OPENSEARCH_USER, "");
+    }
+
+    /**
+     * Get the OpenSearch password.
+     *
+     * @return OpenSearch password, or empty string
+     */
+    public String getOpensearchPassword() {
+        return config.getProperty(CONFIG_OPENSEARCH_PASSWORD, "");
+    }
+
+    /**
+     * Get OpenSearch batch size from configuration.
+     *
+     * @return OpenSearch batch size
+     */
+    public int getOpensearchBatchSize() {
+        return getInt(IntSetting.OPENSEARCH_BATCH_SIZE);
+    }
+
+    /**
      * Get MySQL batch size from configuration.
      *
      * @return MySQL batch size
      */
     public int getMysqlBatchSize() {
         return getInt(IntSetting.MYSQL_BATCH_SIZE);
+    }
+
+    /**
+     * Get MariaDB batch size from configuration.
+     *
+     * @return MariaDB batch size
+     */
+    public int getMariadbBatchSize() {
+        return getInt(IntSetting.MARIADB_BATCH_SIZE);
     }
 
     /**
@@ -279,6 +374,15 @@ class ConfigurationManager {
      */
     public int getSqliteBatchSize() {
         return getInt(IntSetting.SQLITE_BATCH_SIZE);
+    }
+
+    /**
+     * Get DuckDB batch size from configuration.
+     *
+     * @return DuckDB batch size
+     */
+    public int getDuckdbBatchSize() {
+        return getInt(IntSetting.DUCKDB_BATCH_SIZE);
     }
 
     /**

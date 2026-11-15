@@ -10,9 +10,12 @@ import java.util.stream.Collectors;
  */
 enum DatabaseType {
     MYSQL,
+    MARIADB,
     MONGODB,
+    OPENSEARCH,
     PSQL,
-    SQLITE;
+    SQLITE,
+    DUCKDB;
 
     /**
      * Lower-case names, comma separated, for help text.

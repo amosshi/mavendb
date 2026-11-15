@@ -1,0 +1,63 @@
+networks:
+  mavendbopensearchnet:
+    driver: bridge
+
+services:
+
+  # Mavendb search engine: a single node, without the security plugin (plain HTTP, no login), for local use only
+  mavendb-opensearch:
+    image: opensearchproject/opensearch:3
+    pull_policy: always
+    hostname: mavendb-opensearch
+    container_name: mavendb-opensearch
+    restart: always
+    environment:
+      discovery.type: single-node
+      DISABLE_SECURITY_PLUGIN: "true"
+      DISABLE_INSTALL_DEMO_CONFIG: "true"
+      # JVM heap, sized for a 128 GB host where the other databases are stopped (bin/pipeline.sh):
+      #   31g: the largest heap that keeps compressed object pointers (they switch off at about 32g,
+      #        so a 32-40g heap holds fewer objects than 31g). More RAM helps as file system cache, not as heap.
+      #   The rest: mavendb.jar (-Xmx32g in bin/run.sh), and about 60 GB of file system cache for the index files.
+      #   OS RAM : heap
+      #    64 GB   16g
+      #   128 GB   32g
+      OPENSEARCH_JAVA_OPTS: "-Xms31g -Xmx31g"
+      bootstrap.memory_lock: "true"
+      # Bulk requests of large batches; the default limit is 100mb
+      http.max_content_length: 200mb
+      # Indexing buffer shared by all shards being written; default 10% of the heap
+      indices.memory.index_buffer_size: 20%
+      # Snapshot repository for the export in bin/run.sh
+      path.repo: /usr/share/opensearch/snapshots
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+    # The host needs vm.max_map_count >= 262144: sudo sysctl -w vm.max_map_count=262144
+    ports:
+      - ${OPENSEARCH_PORT}:9200
+    # Flushing the in-memory indexing buffers on shutdown takes longer than docker's default 10s
+    stop_grace_period: 5m
+    networks:
+      - mavendbopensearchnet
+
+  # Admin and query UI
+  mavendb-opensearch-dashboards:
+    image: opensearchproject/opensearch-dashboards:3
+    pull_policy: always
+    hostname: mavendb-opensearch-dashboards
+    container_name: mavendb-opensearch-dashboards
+    restart: always
+    environment:
+      OPENSEARCH_HOSTS: '["http://mavendb-opensearch:9200"]'
+      DISABLE_SECURITY_DASHBOARDS_PLUGIN: "true"
+    depends_on:
+      - mavendb-opensearch
+    ports:
+      - ${OPENSEARCH_DASHBOARDS_PORT}:5601
+    networks:
+      - mavendbopensearchnet

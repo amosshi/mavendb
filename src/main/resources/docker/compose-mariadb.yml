@@ -1,0 +1,83 @@
+networks:
+  mavendbmariadbnet:
+    driver: bridge
+
+services:
+
+  # Mavendb Database
+  mavendb-mariadb:
+    image: mariadb:lts
+    pull_policy: always
+    # Same sizing as compose-mysql.yml; buffer pool settings based on OS RAM size
+    #   OS RAM :  innodb_buffer_pool_size
+    #    64 GB                        32G
+    #   128 GB                        64G
+    #
+    # Bulk load settings: MariaDB cannot disable the redo log like MySQL (ALTER INSTANCE DISABLE INNODB REDO_LOG),
+    # so redo is written but not flushed at commit, into a log large enough to avoid checkpoint stalls.
+    #   innodb_flush_log_at_trx_commit=0  Flush the redo log once per second, not at every commit
+    #   innodb_log_file_size=8G           Large redo log: fewer forced checkpoints during the load
+    #   innodb_doublewrite=0              No doublewrite buffer: a crash can corrupt pages; simply rerun the import
+    #
+    # MariaDB has no parallel index build (MySQL innodb_ddl_threads / innodb_parallel_read_threads).
+    # innodb_sort_buffer_size maximum is 64M.
+    #
+    # local_infile=1:
+    #   Required: the loader stores gav with LOAD DATA LOCAL INFILE (client side: allowLocalInfile in ConfigurationManager.java)
+    command:
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_bin
+      --group_concat_max_len=52428800
+      --innodb_adaptive_hash_index=OFF
+      --innodb_buffer_pool_size=64G
+      --innodb_doublewrite=0
+      --innodb_flush_log_at_trx_commit=0
+      --innodb_io_capacity=10000
+      --innodb_io_capacity_max=20000
+      --innodb_log_file_size=8G
+      --innodb_read_io_threads=16
+      --innodb_sort_buffer_size=64M
+      --innodb_write_io_threads=16
+      --local_infile=1
+      --max_allowed_packet=1G
+      --max_connections=80
+      --max_heap_table_size=5G
+      --skip-name-resolve
+      --sort_buffer_size=128M
+      --tmp_table_size=5G
+    hostname: mavendb-mariadb
+    container_name: mavendb-mariadb
+    restart: always
+    # Flushing a 64G buffer pool on shutdown takes longer than docker's default 10s.
+    stop_grace_period: 5m
+    environment:
+      MARIADB_DATABASE: 'mavendb'
+      MARIADB_USER: 'mavendbadmin'
+      # Passwords are subjected to be changed based on your requirement
+      MARIADB_PASSWORD: "${MARIADB_ROOT_PASSWORD}"
+      MARIADB_ROOT_PASSWORD: "${MARIADB_ROOT_PASSWORD}"
+    expose:
+      # Opens port 3306 on the container inside the docker network
+      - '3306'
+    ports:
+      # Map docker MariaDB port to hosting machine; 3307, so it does not clash with MySQL on 3306
+      - ${MARIADB_PORT}:3306
+    networks:
+      - mavendbmariadbnet
+
+  # Database Admin Tool
+  mavendb-mariadb-adminer:
+    image: adminer
+    pull_policy: always
+    hostname: mavendb-mariadb-adminer
+    container_name: mavendb-mariadb-adminer
+    restart: always
+    environment:
+      # Hostname of the DB Image
+      ADMINER_DEFAULT_SERVER: 'mavendb-mariadb'
+    depends_on:
+      - mavendb-mariadb
+    ports:
+      - ${MARIADB_ADMINER_PORT}:8080
+    networks:
+      - mavendbmariadbnet

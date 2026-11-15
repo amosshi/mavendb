@@ -5,6 +5,7 @@ import java.io.UncheckedIOException;
 import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Instant;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -80,7 +81,7 @@ class MvnScanner {
 
     /**
      * Limits the number of batches written to the database at the same time.
-     * Created in {@link #perform(Properties)}, see {@link #stepScan(int)} for why it is needed.
+     * Created in {@link #perform(Properties, RunSummary)}, see {@link #stepScan(int)} for why it is needed.
      */
     private Semaphore writerPermits;
 
@@ -96,6 +97,12 @@ class MvnScanner {
      */
     private final Map<String, Integer> maxLengthTracker = new ConcurrentSkipListMap<>();
 
+    /** Summary of this run, written as a JSON file by {@link Main}. */
+    private RunSummary summary;
+
+    /** Summary tables refreshed by data-refresh.sql, counted for the run summary. */
+    private static final List<String> SUMMARY_TABLES = List.of("g", "ga");
+
     /**
      * One raw index record with its sequence number.
      */
@@ -103,17 +110,18 @@ class MvnScanner {
     }
 
     /**
-     * One converted batch, ready to write: documents for MongoDB, COPY data for PostgreSQL and MySQL,
-     * prepared rows for SQLite.
+     * One converted batch, ready to write: documents for MongoDB, prepared rows for SQLite and DuckDB,
+     * encoded bytes (the payload) for the others: COPY data for PostgreSQL, MySQL and MariaDB, a bulk body for OpenSearch.
      *
      * @param counter Sequence number of the last record, for logging
      * @param size Number of records to write
      * @param documents MongoDB documents, otherwise <code>null</code>
-     * @param rows SQLite rows, otherwise <code>null</code>
-     * @param copyData PostgreSQL and MySQL rows in COPY text format, otherwise <code>null</code>
+     * @param rows SQLite and DuckDB rows, otherwise <code>null</code>
+     * @param payload PostgreSQL, MySQL and MariaDB rows in COPY text format, or an OpenSearch {@code _bulk} body,
+     *                otherwise <code>null</code>
      */
     private record Batch(long counter, int size, List<Document> documents, List<DatabaseRepository.SqlRow> rows,
-            byte[] copyData) {
+            byte[] payload) {
     }
 
     /**
@@ -186,8 +194,15 @@ class MvnScanner {
     }
 
 
-    public void perform(Properties config) throws IOException, SQLException {
+    /**
+     * Run the import: create the schema, scan the index into the database, then refresh the summary tables.
+     *
+     * @param config Configuration properties
+     * @param summary Run summary, filled in with durations, record counts and settings
+     */
+    public void perform(Properties config, RunSummary summary) throws IOException, SQLException {
         this.configMgr = new ConfigurationManager(config);
+        this.summary = summary;
 
         int writers;
         if (this.dbType == DatabaseType.SQLITE) {
@@ -197,16 +212,31 @@ class MvnScanner {
             writers = configMgr.getThreadPoolSize();
         }
         LOG.log(Level.INFO, "Concurrent database writers: {0}", writers);
+        summary.putSetting("writers", writers);
         this.writerPermits = new Semaphore(writers);
 
         this.databaseRepository = switch (this.dbType) {
             case MYSQL -> new DatabaseRepository(DatabaseType.MYSQL, configMgr.getMysqlUrl(), configMgr.mysqlConnectionProps);
+            case MARIADB -> new DatabaseRepository(DatabaseType.MARIADB, configMgr.getMariadbUrl(), configMgr.mariadbConnectionProps);
             case PSQL -> new DatabaseRepository(DatabaseType.PSQL, configMgr.getPsqlUrl(), configMgr.psqlConnectionProps);
             case SQLITE -> new DatabaseRepository(DatabaseType.SQLITE, configMgr.getSqliteUrl(), configMgr.sqliteConnectionProps);
+            case DUCKDB -> new DatabaseRepository(DatabaseType.DUCKDB, configMgr.getDuckdbUrl(), configMgr.duckdbConnectionProps);
             case MONGODB -> new DatabaseRepository(configMgr.getMongodbUrl());
+            case OPENSEARCH -> new DatabaseRepository(configMgr.getOpensearchUrl(), configMgr.getOpensearchUser(), configMgr.getOpensearchPassword());
         };
+        summary.setDatabaseUrl(switch (this.dbType) {
+            case MYSQL -> configMgr.getMysqlUrl();
+            case MARIADB -> configMgr.getMariadbUrl();
+            case PSQL -> configMgr.getPsqlUrl();
+            case SQLITE -> configMgr.getSqliteUrl();
+            case DUCKDB -> configMgr.getDuckdbUrl();
+            case MONGODB -> configMgr.getMongodbUrl();
+            case OPENSEARCH -> configMgr.getOpensearchUrl();
+        });
         if (DatabaseRepository.SUPPORTED_SQL_DB_TYPES.contains(this.dbType)) {
+            long createStart = System.currentTimeMillis();
             this.databaseRepository.executeSQLScript(DB_CREATE_SQL);
+            summary.putDuration("createSchema", System.currentTimeMillis() - createStart);
         }
 
         try {
@@ -219,17 +249,41 @@ class MvnScanner {
                 throw e;
             }
             LOG.log(Level.INFO, "Scan execution time={0}", System.currentTimeMillis() - start);
+            summary.putDuration("import", System.currentTimeMillis() - start);
 
             // All writers are done, release their pooled connections before the post-load scripts
             this.databaseRepository.closeSQLConnections();
 
             // Refresh Data
+            long refreshStart = System.currentTimeMillis();
             if (DatabaseRepository.SUPPORTED_SQL_DB_TYPES.contains(this.dbType)) {
                 this.databaseRepository.executeSQLScript(DB_DATA_REFRESH_SQL);
             } else if (this.dbType == DatabaseType.MONGODB) {
                 this.databaseRepository.createIndexesMongoDB(this.indexId);
+            } else if (this.dbType == DatabaseType.OPENSEARCH) {
+                this.databaseRepository.finishOpenSearch(this.indexId);
+            }
+            summary.putDuration("refresh", System.currentTimeMillis() - refreshStart);
+
+            // Rows of the summary tables; gav has the stored record count.
+            // Informational only: a failed count must not fail a completed import.
+            if (DatabaseRepository.SUPPORTED_SQL_DB_TYPES.contains(this.dbType)) {
+                for (String table : SUMMARY_TABLES) {
+                    try {
+                        summary.putTableRows(table, this.databaseRepository.countRows(table));
+                    } catch (SQLException e) {
+                        LOG.log(Level.WARNING, "Cannot count the rows of table " + table + " for the run summary", e);
+                    }
+                }
+            } else if (this.dbType == DatabaseType.OPENSEARCH) {
+                try {
+                    summary.putTableRows(DatabaseRepository.openSearchIndexName(this.indexId), this.databaseRepository.countOpenSearch(this.indexId));
+                } catch (IOException e) {
+                    LOG.log(Level.WARNING, "Cannot count the documents of the OpenSearch index for the run summary", e);
+                }
             }
         } finally {
+            summary.setMaxFieldLengths(this.maxLengthTracker);
             this.databaseRepository.close();
         }
 
@@ -273,6 +327,14 @@ class MvnScanner {
             IndexReader indexReader = new IndexReader(local, remote)
         ) {
             this.indexId = indexReader.getIndexId();
+            if (this.dbType == DatabaseType.OPENSEARCH) {
+                // The index is named after the Maven index id, known only now
+                this.databaseRepository.createIndexOpenSearch(this.indexId);
+            }
+            this.summary.putIndex("indexId", indexReader.getIndexId());
+            this.summary.setIndexTimestamp(toInstant(indexReader.getPublishedTimestamp()));
+            this.summary.putIndex("incremental", indexReader.isIncremental());
+            this.summary.putIndex("chunks", indexReader.getChunkNames().size());
             LOG.log(Level.INFO,"indexRepoId=" + indexReader.getIndexId());
             LOG.log(Level.INFO,"indexLastPublished=" + indexReader.getPublishedTimestamp());
             LOG.log(Level.INFO,"isIncremental=" + indexReader.isIncremental());
@@ -280,14 +342,19 @@ class MvnScanner {
 
             int batchSize = switch (this.dbType) {
                 case MYSQL -> this.configMgr.getMysqlBatchSize();
+                case MARIADB -> this.configMgr.getMariadbBatchSize();
                 case PSQL -> this.configMgr.getPsqlBatchSize();
                 case SQLITE -> this.configMgr.getSqliteBatchSize();
+                case DUCKDB -> this.configMgr.getDuckdbBatchSize();
                 case MONGODB -> this.configMgr.getMongodbBatchSize();
+                case OPENSEARCH -> this.configMgr.getOpensearchBatchSize();
             };
 
             // Conversion is CPU bound; 2-8 threads keep up with the single decoding thread
             int converters = Math.clamp(Runtime.getRuntime().availableProcessors() / 2, 2, 8);
             LOG.log(Level.INFO, "Concurrent batch converters: {0}", converters);
+            this.summary.putSetting("batchSize", batchSize);
+            this.summary.putSetting("converters", converters);
 
             this.recordSeq = 0;
             long stored;
@@ -302,7 +369,18 @@ class MvnScanner {
                     .sum();
             }
             LOG.log(Level.INFO, "Scanned {0} records, stored {1} records", new Object[]{this.recordSeq, stored});
+            this.summary.setRecords(this.recordSeq, stored);
         }
+    }
+
+    /**
+     * Convert a timestamp of the index reader API, which still uses {@code java.util.Date}, to {@link Instant}.
+     *
+     * @param timestamp Index reader timestamp, may be null
+     * @return The same point in time, or null
+     */
+    private static Instant toInstant(java.util.Date timestamp) {
+        return timestamp == null ? null : timestamp.toInstant();
     }
 
     /**
@@ -312,6 +390,7 @@ class MvnScanner {
         LOG.log(Level.INFO,"  chunkName=" + chunkReader.getName());
         LOG.log(Level.INFO,"  chunkVersion=" + chunkReader.getVersion());
         LOG.log(Level.INFO,"  chunkPublished=" + chunkReader.getTimestamp());
+        this.summary.addIndexChunk(chunkReader.getName(), chunkReader.getVersion(), toInstant(chunkReader.getTimestamp()));
 
         return StreamSupport.stream(chunkReader.spliterator(), false)
             .map(data -> new RawRecord(++this.recordSeq, data))
@@ -352,6 +431,10 @@ class MvnScanner {
         if (this.dbType == DatabaseType.MONGODB) {
             return new Batch(counter, documents.size(), documents, null, null);
         }
+        if (this.dbType == DatabaseType.OPENSEARCH) {
+            // Encode here, on the conversion thread, so the writer only sends bytes
+            return new Batch(counter, documents.size(), null, null, OpenSearchClient.toBulkData(documents));
+        }
 
         List<DatabaseRepository.SqlRow> rows = new ArrayList<>(documents.size());
         try {
@@ -361,7 +444,7 @@ class MvnScanner {
         } catch (SQLException e) {
             throw new IllegalStateException("SQL row preparation failed for records counter=" + counter, e);
         }
-        if (this.dbType == DatabaseType.PSQL || this.dbType == DatabaseType.MYSQL) {
+        if (this.dbType == DatabaseType.PSQL || this.dbType == DatabaseType.MYSQL || this.dbType == DatabaseType.MARIADB) {
             // Encode here, on the conversion thread, so the writer only streams bytes
             return new Batch(counter, rows.size(), null, null, DatabaseRepository.toCopyData(rows, this.dbType));
         }
@@ -444,8 +527,10 @@ class MvnScanner {
         try {
             switch (this.dbType) {
                 case SQLITE -> this.databaseRepository.storeSQL(batch.rows(), batch.counter());
-                case MYSQL, PSQL -> this.databaseRepository.storeCopyData(batch.copyData(), batch.size(), batch.counter());
+                case DUCKDB -> this.databaseRepository.storeDuckDB(batch.rows(), batch.counter());
+                case MYSQL, MARIADB, PSQL -> this.databaseRepository.storeCopyData(batch.payload(), batch.size(), batch.counter());
                 case MONGODB -> this.databaseRepository.storeMongoDB(batch.documents(), batch.counter(), this.indexId);
+                case OPENSEARCH -> this.databaseRepository.storeOpenSearch(batch.payload(), batch.size(), batch.counter(), this.indexId);
             }
         } finally {
             this.writerPermits.release();

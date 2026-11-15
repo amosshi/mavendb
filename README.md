@@ -2,9 +2,12 @@
 
 This application will scan all `maven` repos items and store them to database. Supported database
 - `MongoDB`
+- `OpenSearch`
 - `MySQL`
+- `MariaDB`
 - `PostgreSQL`
 - `SQLite`
+- `DuckDB`
 
 ## Prepare Database
 
@@ -13,6 +16,16 @@ This application will scan all `maven` repos items and store them to database. S
 Execute script [compose-mongodb.sh](src/main/resources/docker/compose-mongodb.sh)
 - `./compose-mongodb.sh`
 
+
+### Option: OpenSearch
+
+Execute script [compose-opensearch.sh](src/main/resources/docker/compose-opensearch.sh)
+- `./compose-opensearch.sh`
+- A single node without the security plugin: plain HTTP on port `9200`, no login, for local use only
+- OpenSearch Dashboards (query UI) on port `5601`
+- The host needs `vm.max_map_count` of at least `262144`: `sudo sysctl -w vm.max_map_count=262144`
+- The documents go to the index named after the Maven index id (`central`); the mapping is in
+  [db/opensearch/create.json](src/main/resources/db/opensearch/create.json)
 
 ### Option: MySQL
 
@@ -39,6 +52,13 @@ Step 2. Start
   - Execute script [compose-mysql.ps1](src/main/resources/docker/compose-mysql.ps1)
     - `powershell -ExecutionPolicy Bypass -File .\compose-mysql.ps1`
 
+### Option: MariaDB
+
+Execute script [compose-mariadb.sh](src/main/resources/docker/compose-mariadb.sh)
+- `./compose-mariadb.sh`
+- It listens on port `3307`, so it can run next to MySQL on `3306`
+- Modify the `innodb_buffer_pool_size` in [compose-mariadb.yml](src/main/resources/docker/compose-mariadb.yml) based on hardware
+
 ### Option: PSQL
 
 Execute script [compose-psql.sh](src/main/resources/docker/compose-psql.sh)
@@ -53,6 +73,17 @@ No setup required! SQLite stores everything in a single file.
   ```properties
   org.mavendb.sqlite.url=jdbc:sqlite:/path/to/mavendb.sqlite
   ```
+
+### Option: DuckDB
+
+No setup required! DuckDB is an embedded analytical database: like SQLite, everything is in a single file.
+
+- Default database file: `mavendb.duckdb` (created in the current directory; `run.sh` deletes the previous one first)
+- Configure the path in [config.properties](src/main/resources/etc/config.properties):
+  ```properties
+  org.mavendb.duckdb.url=jdbc:duckdb:/path/to/mavendb.duckdb
+  ```
+- Query it with the [DuckDB CLI](https://duckdb.org/docs/installation/): `duckdb mavendb.duckdb "SELECT * FROM g LIMIT 10"`
 
 
 ## Download Indexes
@@ -119,9 +150,12 @@ How to Run the Tool
 
 ```sh
 bin $ ./run.sh file:///home/<username>/develop/mavencentral/repo.maven.apache.org/maven2/.index/ mongodb
+bin $ ./run.sh file:///home/<username>/develop/mavencentral/repo.maven.apache.org/maven2/.index/ opensearch
 bin $ ./run.sh file:///home/<username>/develop/mavencentral/repo.maven.apache.org/maven2/.index/ mysql
+bin $ ./run.sh file:///home/<username>/develop/mavencentral/repo.maven.apache.org/maven2/.index/ mariadb
 bin $ ./run.sh file:///home/<username>/develop/mavencentral/repo.maven.apache.org/maven2/.index/ psql
 bin $ ./run.sh file:///home/<username>/develop/mavencentral/repo.maven.apache.org/maven2/.index/ sqlite
+bin $ ./run.sh file:///home/<username>/develop/mavencentral/repo.maven.apache.org/maven2/.index/ duckdb
 ```
 
 How to run for all DB
@@ -169,6 +203,9 @@ Nov 2026 - `115,697,728` artifacts
 | PSQL    | `19.1` min  | `758,813+388,378` / `779,299+408,858`
 | Mongodb | `17.0` min  | `683,546+340,549` / `695,363+349,945`
 | SQLite  | `19.5` min  | `828,488+344,041` / `824,863+365,631`
+| MariaDB | `27.6` min  | `823,452+834,235`
+| OpenSearch | `21.5` min | `1,278,521+10,925`, 50 MB bulk requests
+| DuckDB  | `11.9` min  | `707,255+5,332` / `745,051+6,185` (duckdb_jdbc 2.0.0.1)
 
 ## Access
 

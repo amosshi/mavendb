@@ -5,15 +5,19 @@ import java.io.FileReader;
 import java.io.IOException;
 import java.io.Reader;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.SQLWarning;
 import java.sql.Statement;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Locale;
 import java.util.Properties;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.logging.Level;
@@ -26,6 +30,9 @@ import com.mongodb.client.model.InsertManyOptions;
 
 import com.mysql.cj.jdbc.JdbcStatement;
 
+import org.duckdb.DuckDBAppender;
+import org.duckdb.DuckDBConnection;
+
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 
 import org.apache.ibatis.jdbc.ScriptRunner;
@@ -34,12 +41,12 @@ import org.bson.Document;
 import org.postgresql.PGConnection;
 
 /**
- * Repository for database operations with support for MySQL, PostgreSQL, and MongoDB.
+ * Repository for database operations with support for MySQL, MariaDB, PostgreSQL, SQLite, DuckDB, MongoDB and OpenSearch.
  * Handles all persistent storage operations for Maven records and documents.
  *
  * <p>Connections are reused across batches: SQL writers borrow an idle connection (or open a new one)
  * and return it after commit, so at most one connection exists per concurrent writer.
- * MongoDB uses one shared, thread-safe {@link MongoClient}.
+ * MongoDB uses one shared, thread-safe {@link MongoClient}; OpenSearch one shared {@link OpenSearchClient}.
  */
 class DatabaseRepository implements AutoCloseable {
 
@@ -51,8 +58,10 @@ class DatabaseRepository implements AutoCloseable {
 
     protected static final List<DatabaseType> SUPPORTED_SQL_DB_TYPES = List.of(
         DatabaseType.MYSQL,
+        DatabaseType.MARIADB,
         DatabaseType.PSQL,
-        DatabaseType.SQLITE
+        DatabaseType.SQLITE,
+        DatabaseType.DUCKDB
     );
 
     /* ------- SQL Field Indices ------- */
@@ -113,10 +122,10 @@ class DatabaseRepository implements AutoCloseable {
     private static final int PSQL_COPY_BUFFER_SIZE = 1 << 20;
 
     /**
-     * MySQL bulk load statement, MySQL's counterpart of COPY. The FIELDS/LINES options are MySQL's defaults,
+     * MySQL and MariaDB bulk load statement, their counterpart of COPY. The FIELDS/LINES options are the defaults,
      * spelled out because the data is the same COPY text format, see {@link #toCopyData(List, DatabaseType)}.
-     * The file name is a placeholder: the rows are streamed from memory by
-     * {@link JdbcStatement#setLocalInfileInputStream(java.io.InputStream)}.
+     * The file name is a placeholder: the rows are streamed from memory by the driver's
+     * {@code setLocalInfileInputStream(InputStream)}, see {@link #loadDataLocal(Connection, byte[])}.
      */
     private static final String MYSQL_LOAD_DATA_GAV = "LOAD DATA LOCAL INFILE 'gav.tsv' INTO TABLE gav CHARACTER SET utf8mb4 "
         + "FIELDS TERMINATED BY '\\t' ESCAPED BY '\\\\' LINES TERMINATED BY '\\n' (" + GAV_COLUMNS + ")";
@@ -134,10 +143,13 @@ class DatabaseRepository implements AutoCloseable {
     /** Shared MongoDB client, created lazily; it is thread-safe and pools connections internally. */
     private MongoClient mongoClient;
 
+    /** OpenSearch client, only for {@link DatabaseType#OPENSEARCH}; thread-safe. */
+    private OpenSearchClient openSearchClient;
+
     /**
-     * Constructor for SQL-based repositories (MySQL, PostgreSQL, SQLite).
+     * Constructor for SQL-based repositories (MySQL, MariaDB, PostgreSQL, SQLite, DuckDB).
      *
-     * @param dbType Database type (MYSQL, PSQL or SQLITE)
+     * @param dbType Database type (MYSQL, MARIADB, PSQL, SQLITE or DUCKDB)
      * @param sqlUrl JDBC connection URL
      * @param sqlConnectionProps Connection properties (will be defensively copied)
      */
@@ -158,6 +170,35 @@ class DatabaseRepository implements AutoCloseable {
      */ 
     protected DatabaseRepository(String mongoUrl) {
         this(DatabaseType.MONGODB, mongoUrl, null);
+    }
+
+    /**
+     * Constructor for OpenSearch repository.
+     *
+     * @param openSearchUrl OpenSearch server URL, like {@code http://localhost:9200}
+     * @param user User for basic authentication; blank for a server without the security plugin
+     * @param password Password for basic authentication
+     */
+    protected DatabaseRepository(String openSearchUrl, String user, String password) {
+        this(DatabaseType.OPENSEARCH, openSearchUrl, null);
+        this.openSearchClient = new OpenSearchClient(openSearchUrl, user, password);
+    }
+
+    /**
+     * Count the rows of a table, for the run summary.
+     *
+     * @param table Table name, without schema
+     * @return Number of rows
+     */
+    @SuppressFBWarnings(value = "SQL_NONCONSTANT_STRING_PASSED_TO_EXECUTE", justification = "Table names are constants of MvnScanner")
+    protected long countRows(String table) throws SQLException {
+        String qualified = this.dbType == DatabaseType.PSQL ? "mavendb." + table : table;
+        try (Connection conn = DriverManager.getConnection(this.dbUrl, this.sqlConnectionProps);
+             Statement stmt = conn.createStatement();
+             ResultSet rs = stmt.executeQuery("SELECT count(*) FROM " + qualified)) {
+            rs.next();
+            return rs.getLong(1);
+        }
     }
 
     /**
@@ -251,7 +292,7 @@ class DatabaseRepository implements AutoCloseable {
 
     /**
      * Store a batch of rows in COPY text format with the database's bulk load statement:
-     * {@code COPY ... FROM STDIN} for PostgreSQL, {@code LOAD DATA LOCAL INFILE} for MySQL.
+     * {@code COPY ... FROM STDIN} for PostgreSQL, {@code LOAD DATA LOCAL INFILE} for MySQL and MariaDB.
      *
      * <p>The server parses and inserts the rows as one stream: no per-row Bind/Execute round trip
      * (PostgreSQL), no multi-row INSERT text to build in the driver and parse on the server (MySQL).
@@ -270,7 +311,7 @@ class DatabaseRepository implements AutoCloseable {
             long loaded = switch (this.dbType) {
                 case PSQL -> conn.unwrap(PGConnection.class).getCopyAPI()
                     .copyIn(PSQL_COPY_GAV, new ByteArrayInputStream(copyData), PSQL_COPY_BUFFER_SIZE);
-                case MYSQL -> loadDataMysql(conn, copyData);
+                case MYSQL, MARIADB -> loadDataLocal(conn, copyData);
                 default -> throw new IllegalStateException("Bulk load is not supported for " + this.dbType);
             };
             if (loaded != size) {
@@ -297,16 +338,62 @@ class DatabaseRepository implements AutoCloseable {
     }
 
     /**
+     * Store a DuckDB batch with the Appender: the rows go straight into DuckDB's column vectors,
+     * with no SQL to build or parse.
+     *
+     * <p>Each writer has its own connection and appender; DuckDB appends from several connections concurrently.
+     *
+     * @param rows Prepared rows to persist, see {@link #toSQLRow(Document)}
+     * @param counter Record counter for logging
+     * @throws IllegalStateException if the batch could not be written; the transaction is rolled back
+     */
+    protected void storeDuckDB(List<SqlRow> rows, final long counter) {
+        Connection conn = null;
+        try {
+            conn = borrowConnection();
+            LocalDateTime begin = LocalDateTime.now();
+
+            try (DuckDBAppender appender = conn.unwrap(DuckDBConnection.class).createAppender(DuckDBConnection.DEFAULT_SCHEMA, "gav")) {
+                for (SqlRow row : rows) {
+                    row.appendTo(appender);
+                }
+            }
+            conn.commit();
+
+            // Success: hand the connection back for the next batch
+            this.idleConnections.offer(conn);
+            conn = null;
+
+            Duration duration = Duration.between(begin, LocalDateTime.now());
+            LOG.log(Level.INFO, "persist finished for records counter={0} in seconds={1}, batchSize={2}",
+                    new Object[]{counter, duration.toSeconds(), rows.size()});
+        } catch (SQLException e) {
+            // Fail the run instead of silently losing the batch
+            throw new IllegalStateException("DuckDB append failed for records counter=" + counter, e);
+        } finally {
+            // Failure: discard the connection, its state is unknown
+            if (conn != null) {
+                closeQuietly(conn, true);
+            }
+        }
+    }
+
+    /**
      * Run {@code LOAD DATA LOCAL INFILE} with the rows streamed from memory.
      *
-     * <p>With LOCAL, MySQL turns data errors (truncation, bad values, duplicate keys) into warnings and
-     * carries on, so any warning fails the batch instead of silently storing altered rows.
+     * <p>With LOCAL, MySQL and MariaDB turn data errors (truncation, bad values, duplicate keys) into warnings and
+     * carry on, so any warning fails the batch instead of silently storing altered rows.
      *
      * @return Number of rows loaded
      */
-    private static long loadDataMysql(Connection conn, byte[] copyData) throws SQLException {
+    private long loadDataLocal(Connection conn, byte[] copyData) throws SQLException {
         try (Statement stmt = conn.createStatement()) {
-            stmt.unwrap(JdbcStatement.class).setLocalInfileInputStream(new ByteArrayInputStream(copyData));
+            ByteArrayInputStream rows = new ByteArrayInputStream(copyData);
+            if (this.dbType == DatabaseType.MARIADB) {
+                stmt.unwrap(org.mariadb.jdbc.Statement.class).setLocalInfileInputStream(rows);
+            } else {
+                stmt.unwrap(JdbcStatement.class).setLocalInfileInputStream(rows);
+            }
             long loaded = stmt.executeLargeUpdate(MYSQL_LOAD_DATA_GAV);
             SQLWarning warning = stmt.getWarnings();
             if (warning != null) {
@@ -319,17 +406,17 @@ class DatabaseRepository implements AutoCloseable {
     /**
      * Encode prepared rows in COPY text format (tab separated, {@code \N} for null), UTF-8.
      *
-     * <p>PostgreSQL COPY and MySQL LOAD DATA read the same format and escapes; only booleans differ:
-     * {@code t}/{@code f} for PostgreSQL, {@code 1}/{@code 0} for the MySQL BOOLEAN (TINYINT) columns.
+     * <p>PostgreSQL COPY and MySQL/MariaDB LOAD DATA read the same format and escapes; only booleans differ:
+     * {@code t}/{@code f} for PostgreSQL, {@code 1}/{@code 0} for the MySQL/MariaDB BOOLEAN (TINYINT) columns.
      *
      * <p>Thread safe: called on the conversion threads, so the writer only streams bytes.
      *
      * @param rows Rows prepared by {@link #toSQLRow(Document)}
-     * @param dbType {@link DatabaseType#PSQL} or {@link DatabaseType#MYSQL}
+     * @param dbType {@link DatabaseType#PSQL}, {@link DatabaseType#MYSQL} or {@link DatabaseType#MARIADB}
      * @return COPY data for {@link #storeCopyData(byte[], int, long)}
      */
     protected static byte[] toCopyData(List<SqlRow> rows, DatabaseType dbType) {
-        boolean numericBoolean = dbType == DatabaseType.MYSQL;
+        boolean numericBoolean = dbType == DatabaseType.MYSQL || dbType == DatabaseType.MARIADB;
         StringBuilder sb = new StringBuilder(rows.size() * 512);
         for (SqlRow row : rows) {
             row.appendCopyText(sb, numericBoolean);
@@ -399,6 +486,10 @@ class DatabaseRepository implements AutoCloseable {
         if (this.mongoClient != null) {
             this.mongoClient.close();
             this.mongoClient = null;
+        }
+        if (this.openSearchClient != null) {
+            this.openSearchClient.close();
+            this.openSearchClient = null;
         }
     }
 
@@ -502,7 +593,7 @@ class DatabaseRepository implements AutoCloseable {
             record.remove(JSON_FIELD_ID);
         }
 
-        // MySQL JSON column; SQLite stores JSON as TEXT; PostgreSQL COPY casts the text to jsonb
+        // MySQL, MariaDB and DuckDB JSON column; SQLite stores JSON as TEXT; PostgreSQL COPY casts the text to jsonb
         String json = record.isEmpty() ? null : record.toJson();
         if (this.dbType == DatabaseType.MONGODB) {
             throw new IllegalStateException("SQL parameter binding is not used for MongoDB");
@@ -538,6 +629,78 @@ class DatabaseRepository implements AutoCloseable {
             Indexes.ascending(VersionAnalyser.KEY_MAJOR_VERSION)
         ));
         LOG.log(Level.INFO, "MongoDB createIndex finished, execution time {0} ms", new Object[]{System.currentTimeMillis() - start});
+    }
+
+    /**
+     * OpenSearch index name of a Maven index: OpenSearch index names must be lower case.
+     *
+     * @param indexId Maven index id, like {@code central}
+     * @return OpenSearch index name
+     */
+    static String openSearchIndexName(String indexId) {
+        return indexId.toLowerCase(Locale.ROOT);
+    }
+
+    /**
+     * Drop and create the OpenSearch index from <code>db/opensearch/create.json</code>, ready for the bulk load.
+     *
+     * <p>The definition is tuned for loading, {@link #finishOpenSearch(String)} restores the search settings:
+     * <ul>
+     *   <li>8 primary shards: indexing runs in parallel on a multi-core node; no replicas on a single node</li>
+     *   <li>{@code refresh_interval: -1}: no new searchable segments while loading</li>
+     *   <li>{@code translog.durability: async}: no fsync per bulk request; a crash during the load means a rerun</li>
+     *   <li>{@code best_compression}: smaller index for the export; the large OSGi headers compress well</li>
+     *   <li>Explicit mappings: identifiers are {@code keyword} (exact match, aggregations), names, descriptions and
+     *       OSGi headers are {@code text} (full text search), timestamps are dates. Other strings are {@code keyword},
+     *       not the default {@code text} plus {@code keyword} pair, which would index each value twice</li>
+     * </ul>
+     *
+     * @param indexId Maven index id, like {@code central}
+     */
+    protected void createIndexOpenSearch(String indexId) throws IOException {
+        String definition = Files.readString(Path.of(AppPaths.getDbScriptFileName(this.dbType, "create.json")), StandardCharsets.UTF_8);
+        this.openSearchClient.recreateIndex(openSearchIndexName(indexId), definition);
+    }
+
+    /**
+     * Store an OpenSearch batch with one {@code _bulk} request.
+     *
+     * @param bulkData Request body, see {@link OpenSearchClient#toBulkData(List)}
+     * @param size Number of documents, for checking and logging
+     * @param counter Record counter for logging
+     * @param indexId Maven index id, like {@code central}
+     * @throws IllegalStateException if the batch could not be written
+     */
+    protected void storeOpenSearch(byte[] bulkData, int size, final long counter, String indexId) {
+        LocalDateTime begin = LocalDateTime.now();
+        try {
+            this.openSearchClient.bulk(openSearchIndexName(indexId), bulkData, size, counter);
+        } catch (IOException e) {
+            // Fail the run instead of silently losing the batch
+            throw new IllegalStateException("OpenSearch bulk failed for records counter=" + counter, e);
+        }
+        Duration duration = Duration.between(begin, LocalDateTime.now());
+        LOG.log(Level.INFO, "persist finished for records counter={0} in seconds={1}, batchSize={2}, bytes={3}",
+                new Object[]{counter, duration.toSeconds(), size, bulkData.length});
+    }
+
+    /**
+     * After the load: make the OpenSearch index searchable, see {@link OpenSearchClient#finishLoad(String)}.
+     *
+     * @param indexId Maven index id, like {@code central}
+     */
+    protected void finishOpenSearch(String indexId) throws IOException {
+        this.openSearchClient.finishLoad(openSearchIndexName(indexId));
+    }
+
+    /**
+     * Count the documents of the OpenSearch index, for the run summary.
+     *
+     * @param indexId Maven index id, like {@code central}
+     * @return Number of documents
+     */
+    protected long countOpenSearch(String indexId) throws IOException {
+        return this.openSearchClient.count(openSearchIndexName(indexId));
     }
 
     /**
@@ -651,6 +814,24 @@ class DatabaseRepository implements AutoCloseable {
                     default -> throw new IllegalStateException("Unknown parameter kind: " + this.kinds[i]);
                 }
             }
+        }
+
+        /**
+         * Append this row to a DuckDB appender, one value per gav column, in {@link #GAV_COLUMNS} order.
+         */
+        void appendTo(DuckDBAppender appender) throws SQLException {
+            appender.beginRow();
+            for (int i = 0; i < SQL_IDX_JSON; i++) {
+                switch (this.values[i]) {
+                    case null -> appender.appendNull();
+                    case String str -> appender.append(str);
+                    case Integer v -> appender.append(v.intValue());
+                    case Long v -> appender.append(v.longValue());
+                    case Boolean v -> appender.append(v.booleanValue());
+                    default -> throw new IllegalStateException("Unsupported value type for DuckDB: " + this.values[i].getClass());
+                }
+            }
+            appender.endRow();
         }
     }
 }
