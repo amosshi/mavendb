@@ -207,6 +207,20 @@ Nov 2026 - `115,697,728` artifacts
 | OpenSearch | `21.5` min | `1,278,521+10,925`, 50 MB bulk requests
 | DuckDB  | `11.9` min  | `707,255+5,332` / `745,051+6,185` (duckdb_jdbc 2.0.0.1)
 
+- Full pipeline run, 15 Nov 2026 (`mavendb-6.0`, `e0a0a95`, Java 25, 64 CPUs, 32G heap, 8 converters)
+  - Index timestamp `2026-10-22`; `115,697,725` stored, `3` skipped
+  - Notes: import ms + refresh ms, writers x batch size
+
+| DB Type    | Runtime     | Notes                                 |
+|------------|------------:|---------------------------------------|
+| MySQL      | `25.0` min  | `783,746+715,194`, 4 x 50k
+| MariaDB    | `26.1` min  | `813,314+750,704`, 4 x 50k
+| PSQL       | `19.2` min  | `770,581+382,841`, 4 x 50k
+| Mongodb    | `17.2` min  | `691,914+337,373`, 4 x 20k
+| OpenSearch | `18.9` min  | `1,125,281+9,596`, 4 x 10k
+| SQLite     | `20.3` min  | `849,074+370,640`, 1 x 100k
+| DuckDB     | `12.0` min  | `715,107+3,472`, 4 x 100k
+
 ## Access
 
 ### Mongo Express
