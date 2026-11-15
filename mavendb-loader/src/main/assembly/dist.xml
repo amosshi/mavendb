@@ -8,7 +8,8 @@
     </formats>
     <fileSets>
         <fileSet>
-            <directory>${project.basedir}</directory>
+            <!-- README and LICENSE live at the repository root, one level above this module -->
+            <directory>${project.basedir}/..</directory>
             <outputDirectory>/</outputDirectory>
             <includes>
                 <include>README*</include>

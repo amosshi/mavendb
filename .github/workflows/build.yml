@@ -62,19 +62,22 @@ jobs:
 
       - name: Class dependency graph
         run: |
-          jdeps -verbose:class -filter:none -e 'org\.mavendb\..*' -dotoutput target/jdeps target/classes
-          dot -Tsvg target/jdeps/classes.dot -o target/jdeps/project.svg
+          jdeps -verbose:class -filter:none -e 'org\.mavendb\..*' -dotoutput mavendb-loader/target/jdeps mavendb-loader/target/classes
+          dot -Tsvg mavendb-loader/target/jdeps/classes.dot -o mavendb-loader/target/jdeps/project.svg
 
       - name: Build and test
         run: ./mvnw -B -ntp verify
 
+      - name: Check the API jar is executable
+        run: unzip -l mavendb-api/target/mavendb-api.jar | grep 'BOOT-INF/classes/org/mavendb/api/MavendbApiApplication.class'
+
       - name: Check class graph is in the dist zip
-        run: unzip -l dist/*.zip | grep 'doc/project.svg'
+        run: unzip -l mavendb-loader/dist/*.zip | grep 'doc/project.svg'
 
       - name: Upload test reports
         if: failure()
         uses: actions/upload-artifact@v7
         with:
           name: surefire-reports-${{ matrix.name }}
-          path: target/surefire-reports/
+          path: '*/target/surefire-reports/'
           retention-days: 7

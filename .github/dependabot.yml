@@ -27,13 +27,17 @@ updates:
           - "org.mongodb:*"
           - "org.duckdb:*"
           - "org.opensearch*"
+      # mavendb-api: the Spring Boot BOM, its plugin and starters move together
+      spring-boot:
+        patterns:
+          - "org.springframework.boot:*"
     # ignore:
     #   - dependency-name: "org.apache.maven.indexer:*"
     #     update-types: ["version-update:semver-major"]
 
   # Docker images in the compose files
   - package-ecosystem: "docker-compose"
-    directory: "/src/main/resources/docker"
+    directory: "/mavendb-loader/src/main/resources/docker"
     schedule:
       interval: "monthly"
     labels: ["dependencies", "docker"]

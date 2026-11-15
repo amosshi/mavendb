@@ -9,59 +9,69 @@ This application will scan all `maven` repos items and store them to database. S
 - `SQLite`
 - `DuckDB`
 
+## Modules
+
+| Module | What it does |
+|---|---|
+| [mavendb-loader](mavendb-loader/) | Reads the Maven Central index and loads it into the databases above (`dist/` zip, `bin/run.sh`) |
+| [mavendb-api](mavendb-api/) | Read-only REST API on the SQLite file built by the loader, for a small public server |
+
+All 3rd party versions are set once, in the `<dependencyManagement>` of the root [pom.xml](pom.xml);
+the module poms declare dependencies without versions.
+
 ## Prepare Database
 
 ### Option: MongoDB
 
-Execute script [compose-mongodb.sh](src/main/resources/docker/compose-mongodb.sh)
+Execute script [compose-mongodb.sh](mavendb-loader/src/main/resources/docker/compose-mongodb.sh)
 - `./compose-mongodb.sh`
 
 
 ### Option: OpenSearch
 
-Execute script [compose-opensearch.sh](src/main/resources/docker/compose-opensearch.sh)
+Execute script [compose-opensearch.sh](mavendb-loader/src/main/resources/docker/compose-opensearch.sh)
 - `./compose-opensearch.sh`
 - A single node without the security plugin: plain HTTP on port `9200`, no login, for local use only
 - OpenSearch Dashboards (query UI) on port `5601`
 - The host needs `vm.max_map_count` of at least `262144`: `sudo sysctl -w vm.max_map_count=262144`
 - The documents go to the index named after the Maven index id (`central`); the mapping is in
-  [db/opensearch/create.json](src/main/resources/db/opensearch/create.json)
+  [db/opensearch/create.json](mavendb-loader/src/main/resources/db/opensearch/create.json)
 
 ### Option: MySQL
 
 A Docker Compose file has been configured
-* [compose-mysql.yml](src/main/resources/docker/compose-mysql.yml)
+* [compose-mysql.yml](mavendb-loader/src/main/resources/docker/compose-mysql.yml)
 
 Step 1. Config
-- Modify the passwords set in the [.env](src/main/resources/docker/.env) file based on security requirements
+- Modify the passwords set in the [.env](mavendb-loader/src/main/resources/docker/.env) file based on security requirements
 - Modify the `innodb_buffer_pool_size` in [docker-compose.yml](docker-compose.yml) based on hardware
 
 Step 2. Start
 - For `Ubuntu`/`Linux` users
   - [Install Docker](https://docs.docker.com/engine/install/ubuntu/)
-  - Execute script [compose-mysql.sh](src/main/resources/docker/compose-mysql.sh)
+  - Execute script [compose-mysql.sh](mavendb-loader/src/main/resources/docker/compose-mysql.sh)
     - `./compose-mysql.sh`
 - For MacOS Users
   - [Install Docker Desktop](https://docs.docker.com/desktop/install/mac-install/)
-  - Execute script [compose-mysql.sh](src/main/resources/docker/compose-mysql.sh)
+  - Execute script [compose-mysql.sh](mavendb-loader/src/main/resources/docker/compose-mysql.sh)
     - `./compose-mysql.sh`
 - For Windows Users
   - [Install Docker Desktop](https://docs.docker.com/desktop/install/windows-install/)
   - Make sure the [docker memory resource limit](https://stackoverflow.com/questions/43460770/docker-windows-container-memory-limit) is bigger than the MySQL `innodb_buffer_pool_size`
     - Example: on a 64GB RM Windows laptop, set `--innodb_buffer_pool_size=24G` will work for maven central scan
-  - Execute script [compose-mysql.ps1](src/main/resources/docker/compose-mysql.ps1)
+  - Execute script [compose-mysql.ps1](mavendb-loader/src/main/resources/docker/compose-mysql.ps1)
     - `powershell -ExecutionPolicy Bypass -File .\compose-mysql.ps1`
 
 ### Option: MariaDB
 
-Execute script [compose-mariadb.sh](src/main/resources/docker/compose-mariadb.sh)
+Execute script [compose-mariadb.sh](mavendb-loader/src/main/resources/docker/compose-mariadb.sh)
 - `./compose-mariadb.sh`
 - It listens on port `3307`, so it can run next to MySQL on `3306`
-- Modify the `innodb_buffer_pool_size` in [compose-mariadb.yml](src/main/resources/docker/compose-mariadb.yml) based on hardware
+- Modify the `innodb_buffer_pool_size` in [compose-mariadb.yml](mavendb-loader/src/main/resources/docker/compose-mariadb.yml) based on hardware
 
 ### Option: PSQL
 
-Execute script [compose-psql.sh](src/main/resources/docker/compose-psql.sh)
+Execute script [compose-psql.sh](mavendb-loader/src/main/resources/docker/compose-psql.sh)
 - `./compose-psql.sh`
 
 ### Option: SQLite
@@ -69,7 +79,7 @@ Execute script [compose-psql.sh](src/main/resources/docker/compose-psql.sh)
 No setup required! SQLite stores everything in a single file.
 
 - Default database file: `mavendb.sqlite` (created in the current directory)
-- Configure the path in [config.properties](src/main/resources/etc/config.properties):
+- Configure the path in [config.properties](mavendb-loader/src/main/resources/etc/config.properties):
   ```properties
   org.mavendb.sqlite.url=jdbc:sqlite:/path/to/mavendb.sqlite
   ```
@@ -79,7 +89,7 @@ No setup required! SQLite stores everything in a single file.
 No setup required! DuckDB is an embedded analytical database: like SQLite, everything is in a single file.
 
 - Default database file: `mavendb.duckdb` (created in the current directory; `run.sh` deletes the previous one first)
-- Configure the path in [config.properties](src/main/resources/etc/config.properties):
+- Configure the path in [config.properties](mavendb-loader/src/main/resources/etc/config.properties):
   ```properties
   org.mavendb.duckdb.url=jdbc:duckdb:/path/to/mavendb.duckdb
   ```
@@ -142,7 +152,7 @@ Build the Source Code
 * `./build.sh`
 
 How to Run the Tool
-* Come to the `dist` folder
+* Come to the `mavendb-loader/dist` folder
   * Go to folder `mavendb-<version>-<timestampe>`
 * (Optional) Come to the `etc` edit the `config.properties` file
   * The default values has been optimized, well we can still modify it when needed
@@ -163,6 +173,39 @@ How to run for all DB
 ```sh
 bin $ ./pipeline.sh
 ```
+
+## Metadata API (mavendb-api)
+
+Serves the SQLite file of the loader (`run.sh <index> sqlite`), opened read-only.
+
+```sh
+java --enable-native-access=ALL-UNNAMED -jar mavendb-api/target/mavendb-api.jar \
+     --mavendb.api.sqlite.path=/data/mavendb.sqlite
+```
+
+| Request | Answer |
+|---|---|
+| `GET /v1/files/{fileName}` | GAVs with this file name, like `commons-lang3-3.12.0.jar` (a name can exist in several groups) |
+| `GET /v1/sha1/{sha1}` | GAVs with a file of this SHA-1 |
+| `GET /v1/groups/{groupId}/artifacts?limit=100&offset=0` | Artifacts of a group, by artifact id; `limit` at most 1000 |
+| `GET /v1/groups/{groupId}/artifacts/{artifactId}/latest` | Latest version of an artifact (numeric order: `3.10` after `3.9`) |
+| `GET /actuator/health` | Health check, not rate limited |
+
+Not found is `404`, bad input `400`, over the rate limit `429` with `Retry-After`.
+
+Settings are in [application.yml](mavendb-api/src/main/resources/application.yml), and can be changed without a rebuild,
+for example `--mavendb.api.rate-limit.per-client-per-minute=120` or `MAVENDB_API_RATE_LIMIT_PER_CLIENT_PER_MINUTE=120`.
+
+| Setting `mavendb.api.rate-limit.*` | Default | |
+|---|---|---|
+| `per-client-per-minute` | `60` | Steady rate per client IP |
+| `per-client-burst` | `30` | Requests a client IP may send at once |
+| `global-per-second` | `50` | All clients together |
+| `global-burst` | `100` | |
+| `enabled` | `true` | |
+
+The API listens on `127.0.0.1:8080`, for a reverse proxy on the same host that terminates HTTPS;
+it takes the client IP from `X-Forwarded-For` of that proxy, so the rate limit applies per real client.
 
 ## Exeuction Time
 
@@ -227,14 +270,14 @@ Nov 2026 - `115,697,728` artifacts
 
 Local Mongo Express: [http://localhost:8081/](http://localhost:8081/)
 - Username: `root`
-- Password: use the password in [.env](src/main/resources/docker/.env) file
+- Password: use the password in [.env](mavendb-loader/src/main/resources/docker/.env) file
 
 
 ### MySQL
 
 Access via DB Adminer: [http://localhost:10191/](http://localhost:10191/)
-- Username: `mavendbadmin`, as defined in [.env](src/main/resources/docker/.env) file
-- Password: use the password in [.env](src/main/resources/docker/.env) file
+- Username: `mavendbadmin`, as defined in [.env](mavendb-loader/src/main/resources/docker/.env) file
+- Password: use the password in [.env](mavendb-loader/src/main/resources/docker/.env) file
 
 Access via REST API
 - Rest API user guide see [php-crud-api#treeql](https://github.com/mevdschee/php-crud-api#treeql-a-pragmatic-graphql)
@@ -250,7 +293,7 @@ Access via Docker Shell
 host $ sudo docker compose exec -it mavendb-mysql bash
 ```
 
-- Login to MySQL, use the password defined in [.env](src/main/resources/docker/.env) file
+- Login to MySQL, use the password defined in [.env](mavendb-loader/src/main/resources/docker/.env) file
 ```
 container bash-5.1# mysql -p
 ```
@@ -260,7 +303,7 @@ container bash-5.1# mysql -p
 
 Access via DB Adminer: [http://localhost:10192/](http://localhost:10192/)
 - Username: `root`
-- Password: use the password in [.env](src/main/resources/docker/.env) file
+- Password: use the password in [.env](mavendb-loader/src/main/resources/docker/.env) file
 
 
 ## Internal Only

@@ -46,6 +46,8 @@ SELECT datetime('now', 'localtime');
 -- Remaining indexes
 
 CREATE INDEX IF NOT EXISTS idx_gav_file_name     ON gav(file_name);
+-- mavendb-api: look up a jar by its sha1 (file names are not unique across groups)
+CREATE INDEX IF NOT EXISTS idx_gav_sha1          ON gav(sha1);
 CREATE INDEX IF NOT EXISTS idx_ga                ON ga (group_id, artifact_id);
 CREATE INDEX IF NOT EXISTS idx_g                 ON g  (group_id);
 SELECT datetime('now', 'localtime');
