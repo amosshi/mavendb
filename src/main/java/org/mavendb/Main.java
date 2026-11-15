@@ -18,10 +18,10 @@ import java.util.logging.SimpleFormatter;
 
 import org.apache.commons.cli.CommandLine;
 import org.apache.commons.cli.DefaultParser;
-import org.apache.commons.cli.HelpFormatter;
 import org.apache.commons.cli.Option;
 import org.apache.commons.cli.Options;
 import org.apache.commons.cli.ParseException;
+import org.apache.commons.cli.help.HelpFormatter;
 
 /**
  * Entrance of the application.
@@ -150,9 +150,11 @@ public class Main {
      * Print out help information to command line.
      */
     @SuppressWarnings("java:S106") // Standard outputs should not be used directly to log anything -- Help info need come to System.out
-    private static void printHelp() {
+    private static void printHelp() throws IOException {
         String jarFilename = new File(Main.class.getProtectionDomain().getCodeSource().getLocation().getPath()).getName();
-        new HelpFormatter().printHelp(String.format("java -jar %s [args...]", jarFilename), CommandOptions.OPTIONS);
+        // No "Since" column: the options carry no version information
+        HelpFormatter.builder().setShowSince(false).get()
+            .printHelp(String.format("java -jar %s [args...]", jarFilename), null, CommandOptions.OPTIONS, null, false);
     }
 
     /**

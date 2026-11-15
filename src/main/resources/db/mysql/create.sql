@@ -27,7 +27,7 @@ CREATE TABLE         `gav` (
 
   `group_id`                    varchar(254)   COLLATE utf8mb4_bin     NOT NULL COMMENT 'Record.groupId',                                 -- 2026.02  Max        129
   `artifact_id`                 varchar(256)   COLLATE utf8mb4_bin     NOT NULL COMMENT 'Record.artifactId',                              -- 2026.02  Max         98
-  `artifact_version`            varchar(256)   COLLATE utf8mb4_bin     NOT NULL COMMENT 'Record.version',                                 -- 2026.11  Max        145, index_gav key: (254 + 256 + 256) x 4 bytes = 3064 of the 3072 max
+  `artifact_version`            varchar(250)   COLLATE utf8mb4_bin     NOT NULL COMMENT 'Record.version',                                 -- 2026.11  Max        145, index_gav key: (254 + 256 + 250) x 4 + 4 + 8 + 8 bytes = 3060 of the 3072 max
 
   `classifier`                  varchar( 128)  COLLATE utf8mb4_bin DEFAULT NULL COMMENT 'Record.classifier',                              -- 2026.02  Max         67
   `packaging`                   varchar( 256)  COLLATE utf8mb4_bin DEFAULT NULL COMMENT 'Record.packaging',                               -- 2023.02  Max        113
