@@ -64,7 +64,7 @@ JAVA_OPTS=" \
  -XX:+UseCompactObjectHeaders \
  --enable-native-access=ALL-UNNAMED \
  -XX:FlightRecorderOptions=repository=../log \
- '-XX:StartFlightRecording=disk=true,dumponexit=true,filename=../log/profile.jfr,name=Profiling,settings=profile,method-timing=org.mavendb.DatabaseRepository::storeSQL;org.mavendb.DatabaseRepository::storeCopyData;org.mavendb.DatabaseRepository::storeMongoDB;org.mavendb.DatabaseRepository::executeSQLScript;org.mavendb.DatabaseRepository::createIndexesMongoDB' \
+ '-XX:StartFlightRecording=disk=true,dumponexit=true,filename=../log/profile.jfr,name=Profiling,settings=profile,method-timing=org.mavendb.loader.DatabaseRepository::storeSQL;org.mavendb.loader.DatabaseRepository::storeCopyData;org.mavendb.loader.DatabaseRepository::storeMongoDB;org.mavendb.loader.DatabaseRepository::executeSQLScript;org.mavendb.loader.DatabaseRepository::createIndexesMongoDB' \
 "
 
 # DuckDB is a local file: start from an empty database, like a refreshed container

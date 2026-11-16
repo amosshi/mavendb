@@ -1,4 +1,4 @@
-package org.mavendb;
+package org.mavendb.loader;
 
 import java.util.EnumMap;
 import java.util.Map;

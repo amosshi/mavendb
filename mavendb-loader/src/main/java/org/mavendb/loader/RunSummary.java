@@ -1,4 +1,4 @@
-package org.mavendb;
+package org.mavendb.loader;
 
 import java.io.IOException;
 import java.lang.management.ManagementFactory;
