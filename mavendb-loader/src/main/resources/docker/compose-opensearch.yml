@@ -18,7 +18,7 @@ services:
       # JVM heap, sized for a 128 GB host where the other databases are stopped (bin/pipeline.sh):
       #   31g: the largest heap that keeps compressed object pointers (they switch off at about 32g,
       #        so a 32-40g heap holds fewer objects than 31g). More RAM helps as file system cache, not as heap.
-      #   The rest: mavendb.jar (-Xmx32g in bin/run.sh), and about 60 GB of file system cache for the index files.
+      #   The rest: mavendb-loader.jar (-Xmx32g in bin/run.sh), and about 60 GB of file system cache for the index files.
       #   OS RAM : heap
       #    64 GB   16g
       #   128 GB   32g

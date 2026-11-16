@@ -498,8 +498,8 @@
 
         </plugins>
 
-        <!-- Keep the jar name mavendb.jar: bin/run.sh starts ../mavendb.jar -->
-        <finalName>mavendb</finalName>
+        <!-- The jar is named after the module, mavendb-loader.jar: bin/run.sh starts ../mavendb-loader.jar -->
+        <finalName>${project.artifactId}</finalName>
     </build>
 
     <reporting>

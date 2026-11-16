@@ -72,7 +72,7 @@ if [ "$2" = "duckdb" ]; then
   rm -rf mavendb.duckdb mavendb.duckdb.wal mavendb.duckdb.tmp
 fi
 
-RUN_CMD="java $JAVA_OPTS -Xmx32g -server -jar $BASEDIR/../mavendb.jar -f $1 -d $2"
+RUN_CMD="java $JAVA_OPTS -Xmx32g -server -jar $BASEDIR/../mavendb-loader.jar -f $1 -d $2"
 echo "$(timestamp) $RUN_CMD"
 eval               $RUN_CMD
 RUN_STATUS=$?
