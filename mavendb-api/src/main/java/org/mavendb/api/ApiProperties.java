@@ -6,7 +6,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * Settings under <code>mavendb.api</code>; defaults are in <code>application.yml</code>.
  *
  * @param sqlite    The SQLite file and its connection settings
- * @param rateLimit Request limits, per client IP and for the whole server
+ * @param rateLimit Request limit per client IP
  */
 @ConfigurationProperties(prefix = "mavendb.api")
 public record ApiProperties(Sqlite sqlite, RateLimit rateLimit) {
@@ -23,16 +23,12 @@ public record ApiProperties(Sqlite sqlite, RateLimit rateLimit) {
     }
 
     /**
-     * Token bucket limits. A client may send a burst of requests, then is refilled at the steady rate.
+     * Requests per client IP, counted in fixed one-minute windows by Tomcat's
+     * {@link org.apache.catalina.filters.RateLimitFilter}.
      *
-     * @param enabled            Switch the limits off, for example behind a proxy that limits already
-     * @param perClientPerMinute Steady rate per client IP
-     * @param perClientBurst     Requests a client IP may send at once
-     * @param globalPerSecond    Steady rate for all clients together: protects the server
-     * @param globalBurst        Requests all clients together may send at once
-     * @param maxTrackedClients  Client IPs tracked at most; more clients share one bucket
+     * @param enabled            Switch the limit off, for example when the reverse proxy limits already
+     * @param perClientPerMinute Requests a client IP may send per minute
      */
-    public record RateLimit(boolean enabled, int perClientPerMinute, int perClientBurst,
-                            int globalPerSecond, int globalBurst, int maxTrackedClients) {
+    public record RateLimit(boolean enabled, int perClientPerMinute) {
     }
 }

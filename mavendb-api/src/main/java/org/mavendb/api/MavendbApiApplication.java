@@ -3,14 +3,12 @@ package org.mavendb.api;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.properties.ConfigurationPropertiesScan;
-import org.springframework.scheduling.annotation.EnableScheduling;
 
 /**
  * Read-only Maven Central metadata API, served from the SQLite file built by mavendb-loader.
  */
 @SpringBootApplication
 @ConfigurationPropertiesScan
-@EnableScheduling
 public class MavendbApiApplication {
 
     /**

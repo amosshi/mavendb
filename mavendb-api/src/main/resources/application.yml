@@ -14,26 +14,26 @@ mavendb:
       # Memory map up to 1 GiB of the file; the OS page cache does the rest
       mmap-size: 1073741824
 
-    # Defaults sized for a small VPS (2-8 vCores). Each lookup is an index read of well under a millisecond,
-    # so the server limit is about protecting the box, not about SQLite.
+    # Requests per client IP, counted by Tomcat's built-in RateLimitFilter in fixed one-minute windows.
+    # Each lookup is an index read of well under a millisecond: the limit keeps one client from using up the box.
     rate-limit:
       enabled: true
-      # A person or a build script: 60 requests a minute, bursts of 30
+      # A person or a build script
       per-client-per-minute: 60
-      per-client-burst: 30
-      # All clients together
-      global-per-second: 50
-      global-burst: 100
-      # Memory bound for the per-client buckets (about 100 bytes each)
-      max-tracked-clients: 100000
 
 server:
   port: 8080
-  # Only a reverse proxy on this host (Caddy / nginx, which terminates HTTPS) talks to the API
+  # Only a reverse proxy on this host (nginx, which terminates HTTPS) talks to the API
   address: 127.0.0.1
   # Take the client IP from X-Forwarded-For, trusted from internal addresses only (Tomcat RemoteIpValve):
   # needed so the rate limit sees the real client, not the proxy
   forward-headers-strategy: native
+  tomcat:
+    threads:
+      # Requests served at the same time, for all clients together (Tomcat default 200): sized for a 2-8 vCore VPS.
+      # More requests wait in the accept queue, and are refused once it is full.
+      max: 50
+    accept-count: 100
   error:
     include-message: always
   compression:
