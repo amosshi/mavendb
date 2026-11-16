@@ -54,6 +54,13 @@
         </dependency>
 
         <dependency>
+            <groupId>org.apache.commons</groupId>
+            <artifactId>commons-lang3</artifactId>
+            <type>jar</type>
+            <scope>compile</scope>
+        </dependency>
+
+        <dependency>
             <groupId>org.apache.maven.indexer</groupId>
             <artifactId>indexer-reader</artifactId>
             <type>jar</type>
