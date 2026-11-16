@@ -1,4 +1,4 @@
-package org.mavendb;
+package org.mavendb.loader;
 
 import java.util.StringTokenizer;
 import org.apache.commons.lang3.math.NumberUtils;

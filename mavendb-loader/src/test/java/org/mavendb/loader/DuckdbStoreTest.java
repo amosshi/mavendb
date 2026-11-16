@@ -1,4 +1,4 @@
-package org.mavendb;
+package org.mavendb.loader;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
