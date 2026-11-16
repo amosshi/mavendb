@@ -234,7 +234,7 @@ final class RunSummary {
         }
     }
 
-    /** Version, git revision and build time from the manifest of mavendb.jar; empty when not run from the jar. */
+    /** Version, git revision and build time from the manifest of mavendb-loader.jar; empty when not run from the jar. */
     private static Document buildInfo() {
         Document build = new Document();
         String codeSource = RunSummary.class.getProtectionDomain().getCodeSource().getLocation().getPath();
