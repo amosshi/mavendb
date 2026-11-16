@@ -39,6 +39,8 @@ final class RunSummary {
         .indent(true)
         .build();
 
+    private static final double BYTES_PER_GIB = 1024d * 1024 * 1024;
+
     private final DatabaseType dbType;
     private final String reposFolder;
     private final String logFile;
@@ -47,6 +49,7 @@ final class RunSummary {
     private String status = "RUNNING";
     private String error;
     private String databaseUrl;
+    private Long databaseSizeBytes;
 
     private final Document index = new Document();
     private final List<Document> indexChunks = new ArrayList<>();
@@ -120,6 +123,20 @@ final class RunSummary {
         this.settings.put(key, value);
     }
 
+    /** Size of the loaded database as the database reports it, see {@code DatabaseRepository#databaseSizeBytes}. */
+    void setDatabaseSizeBytes(long bytes) {
+        this.databaseSizeBytes = bytes;
+    }
+
+    private Document database() {
+        Document db = new Document("url", this.databaseUrl);
+        if (this.databaseSizeBytes != null) {
+            db.append("sizeBytes", this.databaseSizeBytes)
+              .append("sizeGiB", Math.round(this.databaseSizeBytes * 10.0 / BYTES_PER_GIB) / 10.0);
+        }
+        return db;
+    }
+
     /** Duration of one phase, like {@code createSchema}, {@code import} and {@code refresh}. */
     void putDuration(String phase, long millis) {
         this.durations.put(phase, millis);
@@ -190,7 +207,7 @@ final class RunSummary {
         }
 
         doc.append("index", new Document("source", this.reposFolder).append("details", this.index).append("chunks", this.indexChunks))
-           .append("database", new Document("url", this.databaseUrl))
+           .append("database", database())
            .append("settings", this.settings)
            .append("maxFieldLengths", new Document(new LinkedHashMap<>(this.maxFieldLengths)))
            .append("build", buildInfo())

@@ -238,31 +238,30 @@ Nov 2026 - `115,697,728` artifacts
 | Mongodb | `26.6` min  | `1,242,975` + `353,517`
 | SQLite  | `30.3` min  | `1,338,312` + `482,009`, 100k batch
 
-- Improving
-
-| DB Type | Runtime     | Notes                                 |
-|---------|------------:|---------------------------------------|
-| MySQL   | `24.5` min  | `761,161+708,368`
-| PSQL    | `19.1` min  | `758,813+388,378` / `779,299+408,858`
-| Mongodb | `17.0` min  | `683,546+340,549` / `695,363+349,945`
-| SQLite  | `19.5` min  | `828,488+344,041` / `824,863+365,631`
-| MariaDB | `27.6` min  | `823,452+834,235`
-| OpenSearch | `21.5` min | `1,278,521+10,925`, 50 MB bulk requests
-| DuckDB  | `11.9` min  | `707,255+5,332` / `745,051+6,185` (duckdb_jdbc 2.0.0.1)
-
-- Full pipeline run, 15 Nov 2026 (`mavendb-6.0`, `e0a0a95`, Java 25, 64 CPUs, 32G heap, 8 converters)
+- Full pipeline run with database sizes, 15 Nov 2026 (`mavendb-loader 6.0`, `4d1dc9c`, Java 25, 64 CPUs, 32G heap, 8 converters)
   - Index timestamp `2026-10-22`; `115,697,725` stored, `3` skipped
-  - Notes: import ms + refresh ms, writers x batch size
+  - Runtime notes: import ms + refresh ms, writers x batch size
+  - DB size: what the database reports for the `mavendb` data, tables and indexes (`database.sizeGiB` in the run summary `log/*.json`)
+  - On disk: the docker volume of the container, or the database file (`log/db-size.txt`); includes redo / WAL logs and system data
+  - Export: the file `bin/run.sh` writes to `var/` after the load
 
-| DB Type    | Runtime     | Notes                                 |
-|------------|------------:|---------------------------------------|
-| MySQL      | `23.7` min  | `766,295+653,768`, 4 x 50k
-| MariaDB    | `26.1` min  | `813,314+750,704`, 4 x 50k
-| PSQL       | `19.2` min  | `770,581+382,841`, 4 x 50k
-| Mongodb    | `17.2` min  | `691,914+337,373`, 4 x 20k
-| OpenSearch | `18.9` min  | `1,125,281+9,596`, 4 x 10k
-| SQLite     | `20.3` min  | `849,074+370,640`, 1 x 100k
-| DuckDB     | `12.0` min  | `715,107+3,472`, 4 x 100k
+| DB Type    | Runtime     | Notes                          | DB size      | On disk      | Export                               |
+|------------|------------:|--------------------------------|-------------:|-------------:|--------------------------------------|
+| MySQL      | `24.6` min  | `785,153+689,346`, 4 x 50k     | `39.7` GiB   | `57.8` GiB   | `3.7` GiB `mavendb-mysql.sql.gz`     |
+| MariaDB    | `26.2` min  | `814,317+757,397`, 4 x 50k     | `56.7` GiB   | `65.1` GiB   | `3.7` GiB `mavendb-mariadb.sql.gz`   |
+| PSQL       | `19.2` min  | `768,490+383,581`, 4 x 50k     | `45.1` GiB   | `45.2` GiB   | `3.8` GiB `mavendb-psql.sql.gz`      |
+| Mongodb    | `17.1` min  | `689,386+339,432`, 4 x 20k     | `12.3` GiB   | `12.5` GiB   | `4.1` GiB `mavendb-mongo.archive.gz` |
+| OpenSearch | `19.4` min  | `1,141,584+21,611`, 4 x 10k    | `24.9` GiB   | `21.4` GiB   | `21.4` GiB `mavendb-opensearch-snapshot.tar` (not compressed) |
+| SQLite     | `22.5` min  | `828,297+520,170`, 1 x 100k    | `52.0` GiB   | `52.0` GiB   | `7.9` GiB `mavendb.sqlite.zip`       |
+| DuckDB     | `11.8` min  | `705,700+3,056`, 4 x 100k      | `10.0` GiB   | `10.0` GiB   | `2.2` GiB `mavendb.duckdb.zip`       |
+
+- Notes on size
+  - The row stores (MySQL, MariaDB, PSQL, SQLite) take `45` to `65` GiB; MongoDB (WiredTiger, compressed) and DuckDB (columnar, compressed) about `10` to `12` GiB
+  - Every compressed export is `2` to `8` GiB: the size to download or upload, for example to the `mavendb-api` server
+  - MySQL and MariaDB report the size from table statistics, an estimate of the used pages: the `.ibd` files also hold
+    free space left by the index builds, plus redo, undo and the system tablespace, hence `39.7` GiB reported for `57.8` GiB on disk
+  - MySQL DB size is from a second MySQL run the same evening, after a fix to the size query (`25.7` min, `57.9` GiB on disk)
+  - SQLite refresh is `150` s longer than before: the index `idx_gav_sha1` for `mavendb-api`
 
 ## Access
 

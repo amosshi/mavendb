@@ -202,6 +202,56 @@ class DatabaseRepository implements AutoCloseable {
     }
 
     /**
+     * Size of the loaded database as the database reports it, for the run summary: tables and indexes of
+     * {@value ConfigurationManager#DATABASE_NAME}, without logs (redo, WAL) or system data.
+     *
+     * @param indexId Maven index id, names the MongoDB collection and the OpenSearch index
+     * @return Size in bytes
+     */
+    protected long databaseSizeBytes(String indexId) throws SQLException, IOException {
+        return switch (this.dbType) {
+            // MySQL caches these statistics for a day (0 right after a load) unless the session asks for fresh ones.
+            // Not INNODB_TABLESPACES.FILE_SIZE: it needs the PROCESS privilege, which the app user does not have.
+            case MYSQL -> querySize("SET SESSION information_schema_stats_expiry = 0", SQL_TABLES_SIZE, ConfigurationManager.DATABASE_NAME);
+            case MARIADB -> querySize(null, SQL_TABLES_SIZE, ConfigurationManager.DATABASE_NAME);
+            case PSQL -> querySize(null, "SELECT pg_database_size(current_database())");
+            case SQLITE -> querySize(null, "SELECT page_count * page_size FROM pragma_page_count(), pragma_page_size()");
+            case DUCKDB -> querySize(null, "SELECT total_blocks * block_size FROM pragma_database_size() WHERE database_name = current_database()");
+            case MONGODB -> {
+                Document stats = getMongoClient().getDatabase(ConfigurationManager.DATABASE_NAME).runCommand(new Document("dbStats", 1));
+                yield stats.get("storageSize", Number.class).longValue() + stats.get("indexSize", Number.class).longValue();
+            }
+            case OPENSEARCH -> this.openSearchClient.storeSizeBytes(openSearchIndexName(indexId));
+        };
+    }
+
+    /** Tables and indexes of one schema, MySQL and MariaDB. */
+    private static final String SQL_TABLES_SIZE =
+        "SELECT COALESCE(SUM(data_length + index_length), 0) FROM information_schema.tables WHERE table_schema = ?";
+
+    /**
+     * @param setup Statement run first on the same connection, or null
+     * @param sql   Query returning the size in bytes
+     */
+    private long querySize(String setup, String sql, String... params) throws SQLException {
+        try (Connection conn = DriverManager.getConnection(this.dbUrl, this.sqlConnectionProps);
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            if (setup != null) {
+                try (Statement stmt = conn.createStatement()) {
+                    stmt.execute(setup);
+                }
+            }
+            for (int i = 0; i < params.length; i++) {
+                ps.setString(i + 1, params[i]);
+            }
+            try (ResultSet rs = ps.executeQuery()) {
+                rs.next();
+                return rs.getLong(1);
+            }
+        }
+    }
+
+    /**
      * Execute an SQL script.
      */
     protected void executeSQLScript(String script) throws IOException, SQLException {

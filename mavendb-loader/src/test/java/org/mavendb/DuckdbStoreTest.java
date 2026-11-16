@@ -79,6 +79,8 @@ class DuckdbStoreTest {
 
         try (DatabaseRepository repo = new DatabaseRepository(DatabaseType.DUCKDB, url, new Properties())) {
             repo.storeDuckDB(rows, rows.size());
+            // At least the header and one block of the file
+            assertTrue(repo.databaseSizeBytes("central") > 0, "database size");
         }
 
         try (Connection conn = DriverManager.getConnection(url);

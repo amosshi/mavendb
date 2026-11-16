@@ -40,6 +40,7 @@ class RunSummaryTest {
     void testSuccess() throws Exception {
         RunSummary summary = new RunSummary(DatabaseType.MYSQL, "file:///index/", "20261114.120000-mysql.log");
         summary.setDatabaseUrl("jdbc:mysql://127.0.0.1:3306/mavendb");
+        summary.setDatabaseSizeBytes(3L * 1024 * 1024 * 1024 / 2);
         summary.putDuration("createSchema", 65);
         summary.putDuration("import", 2_000);
         summary.putDuration("refresh", 1_000);
@@ -69,6 +70,9 @@ class RunSummaryTest {
         assertEquals(10, doc.get("tableRows", Document.class).get("g", Number.class).longValue());
         assertEquals(145, doc.get("maxFieldLengths", Document.class).get("version", Number.class).intValue());
         assertEquals("20261114.120000-mysql.log", doc.getString("logFile"));
+        Document database = doc.get("database", Document.class);
+        assertEquals(1_610_612_736L, database.get("sizeBytes", Number.class).longValue());
+        assertEquals(1.5, database.get("sizeGiB", Number.class).doubleValue());
 
         assertEquals(published.toString(), doc.getString("indexTimestamp"));
         assertEquals(1.5, doc.get("indexAgeDays", Number.class).doubleValue());

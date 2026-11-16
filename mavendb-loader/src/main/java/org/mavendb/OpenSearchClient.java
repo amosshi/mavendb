@@ -195,6 +195,14 @@ final class OpenSearchClient implements AutoCloseable {
         return Document.parse(response.body()).get("count", Number.class).longValue();
     }
 
+    /** Bytes the index takes on disk, primaries and replicas: {@code _all.total.store.size_in_bytes}. */
+    long storeSizeBytes(String index) throws IOException {
+        HttpResponse<String> response = send(request("/" + index + "/_stats/store").GET(), "stats");
+        expectOk(response, "stats");
+        Document total = Document.parse(response.body()).get("_all", Document.class).get("total", Document.class);
+        return total.get("store", Document.class).get("size_in_bytes", Number.class).longValue();
+    }
+
     private HttpRequest.Builder request(String path) {
         HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(this.baseUrl + path)).timeout(REQUEST_TIMEOUT);
         if (this.authorization != null) {

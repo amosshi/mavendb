@@ -282,6 +282,13 @@ class MvnScanner {
                     LOG.log(Level.WARNING, "Cannot count the documents of the OpenSearch index for the run summary", e);
                 }
             }
+
+            // Informational only, like the row counts
+            try {
+                summary.setDatabaseSizeBytes(this.databaseRepository.databaseSizeBytes(this.indexId));
+            } catch (SQLException | IOException | RuntimeException e) {
+                LOG.log(Level.WARNING, "Cannot get the database size for the run summary", e);
+            }
         } finally {
             summary.setMaxFieldLengths(this.maxLengthTracker);
             this.databaseRepository.close();
