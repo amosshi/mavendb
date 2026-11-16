@@ -21,7 +21,6 @@ import java.util.stream.Gatherers;
 import java.util.stream.Stream;
 import java.util.stream.StreamSupport;
 
-import org.apache.commons.lang3.StringUtils;
 import org.apache.maven.index.reader.ChunkReader;
 import org.apache.maven.index.reader.IndexReader;
 import org.apache.maven.index.reader.Record;
@@ -547,9 +546,24 @@ class MvnScanner {
 
 
     /**
-     * Strip leading/trailing whitespace and double quotes from input string.
+     * Strip leading/trailing whitespace, then leading/trailing double quotes from input string.
+     *
+     * @param input Value from the index, may be <code>null</code>
+     * @return Stripped value; <code>null</code> when the input is <code>null</code> or only whitespace
      */
-    private String strip(String input) {
-        return StringUtils.strip(StringUtils.stripToNull(input), "\"");
+    static String strip(String input) {
+        if (input == null || input.isBlank()) {
+            return null;
+        }
+        String trimmed = input.strip();
+        int begin = 0;
+        int end = trimmed.length();
+        while (begin < end && trimmed.charAt(begin) == '"') {
+            begin++;
+        }
+        while (end > begin && trimmed.charAt(end - 1) == '"') {
+            end--;
+        }
+        return trimmed.substring(begin, end);
     }
 }

@@ -195,7 +195,7 @@ Not found is `404`, bad input `400`, over the rate limit `429`. Every `/v1` answ
 `RateLimit-Policy` headers, like `RateLimit-Policy: "per-ip";q=60;w=60` and `RateLimit: "per-ip";r=59`:
 the quota per window of `w` seconds, and the requests left in the current window.
 
-Settings are in [application.yml](mavendb-api/src/main/resources/application.yml), and can be changed without a rebuild,
+Settings are in [application.properties](mavendb-api/src/main/resources/application.properties), and can be changed without a rebuild,
 for example `--mavendb.api.rate-limit.per-client-per-minute=120` or `MAVENDB_API_RATE_LIMIT_PER_CLIENT_PER_MINUTE=120`.
 
 | Setting | Default | |

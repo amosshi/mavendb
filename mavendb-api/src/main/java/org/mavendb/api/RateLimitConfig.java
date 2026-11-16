@@ -13,7 +13,7 @@ import org.springframework.core.Ordered;
  * small VPS. Over the limit the answer is <code>429 Too Many Requests</code>.
  *
  * <p>The client IP is the request's remote address. Behind a reverse proxy on the same host,
- * <code>server.forward-headers-strategy=native</code> (in <code>application.yml</code>) makes Tomcat take it from
+ * <code>server.forward-headers-strategy=native</code> (in <code>application.properties</code>) makes Tomcat take it from
  * <code>X-Forwarded-For</code>, before this filter runs; that header is only trusted from internal addresses.
  *
  * <p>Only the API paths are limited: <code>/actuator/health</code> stays reachable for monitoring.

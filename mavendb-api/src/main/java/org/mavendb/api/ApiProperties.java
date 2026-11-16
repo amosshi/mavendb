@@ -3,7 +3,7 @@ package org.mavendb.api;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /**
- * Settings under <code>mavendb.api</code>; defaults are in <code>application.yml</code>.
+ * Settings under <code>mavendb.api</code>; defaults are in <code>application.properties</code>.
  *
  * @param sqlite    The SQLite file and its connection settings
  * @param rateLimit Request limit per client IP

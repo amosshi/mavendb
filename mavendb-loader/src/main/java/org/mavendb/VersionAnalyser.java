@@ -1,7 +1,6 @@
 package org.mavendb;
 
 import java.util.StringTokenizer;
-import org.apache.commons.lang3.math.NumberUtils;
 
 /**
  * Version string analysis result.
@@ -78,27 +77,27 @@ record VersionAnalyser(int majorVersion, long versionSeq) {
 
                 if (tokenizer.hasMoreTokens()) {
                     majorVersionStr = tokenizer.nextToken();
-                    majorVersion = Math.min(NumberUtils.toLong(majorVersionStr), MAJOR_VERSION_MAX);
+                    majorVersion = Math.min(toLong(majorVersionStr), MAJOR_VERSION_MAX);
                 }
                 if (tokenizer.hasMoreTokens()) {
-                    minorVersion = NumberUtils.toLong(tokenizer.nextToken());
+                    minorVersion = toLong(tokenizer.nextToken());
                 }
                 if (tokenizer.hasMoreTokens()) {
-                    increVersion = NumberUtils.toLong(tokenizer.nextToken());
+                    increVersion = toLong(tokenizer.nextToken());
                 }
                 if (tokenizer.hasMoreTokens()) {
-                    four4Version = NumberUtils.toLong(tokenizer.nextToken());
+                    four4Version = toLong(tokenizer.nextToken());
                 }
             } else {
-                four4Version = NumberUtils.toLong(versionTemp);
+                four4Version = toLong(versionTemp);
             }
 
             if (majorVersion == MAJOR_VERSION_MAX) {
                 // We suspect the version string is usually a year.month.date
                 // So we set major version as the year
                 String upTo4char = majorVersionStr.substring(0, Math.min(majorVersionStr.length(), YEAR_LENGTH));
-                majorVersion = NumberUtils.toLong(upTo4char);
-                seq = shrinkLong(NumberUtils.toLong(majorVersionStr),
+                majorVersion = toLong(upTo4char);
+                seq = shrinkLong(toLong(majorVersionStr),
                         MAJOR_VERSION_MAX_YEAR) * 1000000000L + shrinkLong(minorVersion, 999999) * 1000L + shrinkLong(increVersion, 999);
             } else {
                 // All other cases: standard semantic versioning
@@ -118,6 +117,20 @@ record VersionAnalyser(int majorVersion, long versionSeq) {
     @Override
     public String toString() {
         return this.majorVersion + ", " + this.versionSeq;
+    }
+
+    /**
+     * Parse a number, giving 0 when it is not one.
+     *
+     * @param str Digits; <code>null</code>, empty or too long for a long gives 0
+     * @return The number, or 0
+     */
+    private static long toLong(final String str) {
+        try {
+            return Long.parseLong(str);
+        } catch (NumberFormatException e) {
+            return 0;
+        }
     }
 
     /**
