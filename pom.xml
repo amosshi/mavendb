@@ -62,6 +62,7 @@
         <slf4j.version>2.0.20</slf4j.version><!-- https://mvnrepository.com/artifact/org.slf4j/slf4j-simple -->
         <spring-boot.version>4.1.2</spring-boot.version><!-- https://mvnrepository.com/artifact/org.springframework.boot/spring-boot-dependencies -->
         <spotbugs.version>4.10.5</spotbugs.version><!-- https://mvnrepository.com/artifact/com.github.spotbugs/spotbugs -->
+        <umldoclet.version>2.3.2</umldoclet.version><!-- https://mvnrepository.com/artifact/nl.talsmasoftware/umldoclet -->
     </properties>
 
     <scm child.scm.connection.inherit.append.path="false" child.scm.developerConnection.inherit.append.path="false" child.scm.url.inherit.append.path="false">
@@ -197,5 +198,29 @@
             </dependency>
         </dependencies>
     </dependencyManagement>
+
+    <build>
+        <pluginManagement>
+            <plugins>
+                <!-- JavaDoc with UML package and class diagrams (PlantUML), for every module -->
+                <!-- https://github.com/talsma-ict/umldoclet -->
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-javadoc-plugin</artifactId>
+                    <version>${maven-javadoc-plugin.version}</version>
+                    <configuration>
+                        <!-- Hide the per-file "Generating ..." notes -->
+                        <quiet>true</quiet>
+                        <doclet>nl.talsmasoftware.umldoclet.UMLDoclet</doclet>
+                        <docletArtifact>
+                            <groupId>nl.talsmasoftware</groupId>
+                            <artifactId>umldoclet</artifactId>
+                            <version>${umldoclet.version}</version>
+                        </docletArtifact>
+                    </configuration>
+                </plugin>
+            </plugins>
+        </pluginManagement>
+    </build>
 
 </project>

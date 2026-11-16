@@ -11,6 +11,11 @@ import org.springframework.boot.context.properties.ConfigurationPropertiesScan;
 @ConfigurationPropertiesScan
 public class MavendbApiApplication {
 
+    /** Created by Spring Boot. */
+    public MavendbApiApplication() {
+        // Nothing to set up
+    }
+
     /**
      * Start the API.
      *

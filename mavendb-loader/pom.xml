@@ -381,16 +381,19 @@
                         <additionalJOption>-J-Xmx4g</additionalJOption>
                     </additionalJOptions>
                     <detectJavaApiLink>true</detectJavaApiLink>
-                    <detectLinks>true</detectLinks>
+                    <!-- detectLinks guesses <project url>/apidocs, which is wrong for most dependencies: list them here -->
+                    <detectLinks>false</detectLinks>
                     <header>Maven DB &lt;br&gt; Store Maven Repository data into Database</header>
                     <show>private</show>
 
-                    <!-- If the detectLinks does not work, we need to add the URL here -->
                     <links>
                         <link>https://commons.apache.org/proper/commons-cli/apidocs/</link>
                         <link>https://commons.apache.org/proper/commons-lang/apidocs/</link>
                         <link>https://www.javadoc.io/doc/com.github.spotbugs/spotbugs-annotations/${spotbugs.version}/</link>
                         <link>https://maven.apache.org/maven-indexer/apidocs</link>
+                        <link>https://mybatis.org/mybatis-3/apidocs/</link>
+                        <link>https://www.slf4j.org/apidocs/</link>
+                        <link>https://www.javadoc.io/doc/org.postgresql/postgresql/${postgresql.version}/</link>
                     </links>
                 </configuration>
             </plugin>

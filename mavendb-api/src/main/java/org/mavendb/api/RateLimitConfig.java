@@ -23,6 +23,11 @@ import org.springframework.core.Ordered;
 @ConditionalOnProperty(prefix = "mavendb.api.rate-limit", name = "enabled", havingValue = "true", matchIfMissing = true)
 public class RateLimitConfig {
 
+    /** Created by Spring. */
+    public RateLimitConfig() {
+        // Nothing to set up
+    }
+
     /** Length of a counting window, in seconds. */
     static final int WINDOW_SECONDS = 60;
 
