@@ -191,18 +191,19 @@ java --enable-native-access=ALL-UNNAMED -jar mavendb-api/target/mavendb-api.jar 
 | `GET /v1/groups/{groupId}/artifacts/{artifactId}/latest` | Latest version of an artifact (numeric order: `3.10` after `3.9`) |
 | `GET /actuator/health` | Health check, not rate limited |
 
-Not found is `404`, bad input `400`, over the rate limit `429` with `Retry-After`.
+Not found is `404`, bad input `400`, over the rate limit `429`. Every `/v1` answer has the `RateLimit` and
+`RateLimit-Policy` headers, like `RateLimit-Policy: "per-ip";q=60;w=60` and `RateLimit: "per-ip";r=59`:
+the quota per window of `w` seconds, and the requests left in the current window.
 
 Settings are in [application.yml](mavendb-api/src/main/resources/application.yml), and can be changed without a rebuild,
 for example `--mavendb.api.rate-limit.per-client-per-minute=120` or `MAVENDB_API_RATE_LIMIT_PER_CLIENT_PER_MINUTE=120`.
 
-| Setting `mavendb.api.rate-limit.*` | Default | |
+| Setting | Default | |
 |---|---|---|
-| `per-client-per-minute` | `60` | Steady rate per client IP |
-| `per-client-burst` | `30` | Requests a client IP may send at once |
-| `global-per-second` | `50` | All clients together |
-| `global-burst` | `100` | |
-| `enabled` | `true` | |
+| `mavendb.api.rate-limit.per-client-per-minute` | `60` | Requests per client IP per one-minute window (Tomcat's built-in `RateLimitFilter`) |
+| `mavendb.api.rate-limit.enabled` | `true` | |
+| `server.tomcat.threads.max` | `50` | Requests served at the same time, for all clients together |
+| `server.tomcat.accept-count` | `100` | Requests waiting for a thread; more are refused |
 
 The API listens on `127.0.0.1:8080`, for a reverse proxy on the same host that terminates HTTPS;
 it takes the client IP from `X-Forwarded-For` of that proxy, so the rate limit applies per real client.
