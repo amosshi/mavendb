@@ -16,6 +16,11 @@ import org.sqlite.SQLiteDataSource;
 @Configuration(proxyBeanMethods = false)
 public class SqliteConfig {
 
+    /** Created by Spring. */
+    public SqliteConfig() {
+        // Nothing to set up
+    }
+
     /**
      * The pool used by {@link GavRepository}.
      *
