@@ -3,8 +3,8 @@
 
 rm -rf mavendb-loader/dist/
 
-# Compile first: the dependency graphs are generated from mavendb-loader/target/classes,
-# and must exist before 'package' builds the dist zip and 'site' builds the javadoc
+# Compile first: the dependency graphs are generated from the target/classes of each module,
+# and must exist before 'site' builds the javadoc
 ./mvnw clean compile -e || exit 1
 ./graphs.sh || exit 1
 
