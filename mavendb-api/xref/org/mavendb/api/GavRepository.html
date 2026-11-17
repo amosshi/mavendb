@@ -1,0 +1,121 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="" lang="">
+<head><meta http-equiv="content-type" content="text/html; charset=UTF-8" />
+<title>GavRepository xref</title>
+<link type="text/css" rel="stylesheet" href="../../../stylesheet.css" />
+</head>
+<body>
+<div id="overview"><a href="../../../../apidocs/org/mavendb/api/GavRepository.html">View Javadoc</a></div><pre>
+<a class="jxr_linenumber" name="L1" href="#L1">1</a>   <strong class="jxr_keyword">package</strong> org.mavendb.api;
+<a class="jxr_linenumber" name="L2" href="#L2">2</a>   
+<a class="jxr_linenumber" name="L3" href="#L3">3</a>   <strong class="jxr_keyword">import</strong> java.sql.ResultSet;
+<a class="jxr_linenumber" name="L4" href="#L4">4</a>   <strong class="jxr_keyword">import</strong> java.sql.SQLException;
+<a class="jxr_linenumber" name="L5" href="#L5">5</a>   <strong class="jxr_keyword">import</strong> java.util.List;
+<a class="jxr_linenumber" name="L6" href="#L6">6</a>   <strong class="jxr_keyword">import</strong> java.util.Optional;
+<a class="jxr_linenumber" name="L7" href="#L7">7</a>   <strong class="jxr_keyword">import</strong> org.springframework.jdbc.core.simple.JdbcClient;
+<a class="jxr_linenumber" name="L8" href="#L8">8</a>   <strong class="jxr_keyword">import</strong> org.springframework.stereotype.Repository;
+<a class="jxr_linenumber" name="L9" href="#L9">9</a>   
+<a class="jxr_linenumber" name="L10" href="#L10">10</a>  <em class="jxr_javadoccomment">/**</em>
+<a class="jxr_linenumber" name="L11" href="#L11">11</a>  <em class="jxr_javadoccomment"> * All SQL of the API. Every query is an indexed lookup on the loader's SQLite schema</em>
+<a class="jxr_linenumber" name="L12" href="#L12">12</a>  <em class="jxr_javadoccomment"> * (&lt;code&gt;db/sqlite/create.sql&lt;/code&gt; and &lt;code&gt;data-refresh.sql&lt;/code&gt; in mavendb-loader).</em>
+<a class="jxr_linenumber" name="L13" href="#L13">13</a>  <em class="jxr_javadoccomment"> */</em>
+<a class="jxr_linenumber" name="L14" href="#L14">14</a>  @Repository
+<a class="jxr_linenumber" name="L15" href="#L15">15</a>  <strong class="jxr_keyword">public</strong> <strong class="jxr_keyword">class</strong> <a name="GavRepository" href="../../../org/mavendb/api/GavRepository.html#GavRepository">GavRepository</a> {
+<a class="jxr_linenumber" name="L16" href="#L16">16</a>  
+<a class="jxr_linenumber" name="L17" href="#L17">17</a>      <em class="jxr_javadoccomment">/** Rows returned at most by a lookup by file name or sha1. */</em>
+<a class="jxr_linenumber" name="L18" href="#L18">18</a>      <strong class="jxr_keyword">static</strong> <strong class="jxr_keyword">final</strong> <strong class="jxr_keyword">int</strong> MAX_FILE_MATCHES = 100;
+<a class="jxr_linenumber" name="L19" href="#L19">19</a>  
+<a class="jxr_linenumber" name="L20" href="#L20">20</a>      <strong class="jxr_keyword">private</strong> <strong class="jxr_keyword">static</strong> <strong class="jxr_keyword">final</strong> String GAV_COLUMNS = <span class="jxr_string">""</span><span class="jxr_string">"
+<a class="jxr_linenumber" name="L21" href="#L21">21</a>          group_id, artifact_id, artifact_version, classifier, packaging, file_extension,
+<a class="jxr_linenumber" name="L22" href="#L22">22</a>          file_name, sha1, file_size, file_modified
+<a class="jxr_linenumber" name="L23" href="#L23">23</a>          <span class="jxr_string">""</span><span class="jxr_string">";
+<a class="jxr_linenumber" name="L24" href="#L24">24</a>  
+<a class="jxr_linenumber" name="L25" href="#L25">25</a>      <strong class="jxr_keyword">private</strong> <strong class="jxr_keyword">final</strong> JdbcClient jdbc;
+<a class="jxr_linenumber" name="L26" href="#L26">26</a>  
+<a class="jxr_linenumber" name="L27" href="#L27">27</a>      <a name="GavRepository" href="../../../org/mavendb/api/GavRepository.html#GavRepository">GavRepository</a>(JdbcClient jdbc) {
+<a class="jxr_linenumber" name="L28" href="#L28">28</a>          <strong class="jxr_keyword">this</strong>.jdbc = jdbc;
+<a class="jxr_linenumber" name="L29" href="#L29">29</a>      }
+<a class="jxr_linenumber" name="L30" href="#L30">30</a>  
+<a class="jxr_linenumber" name="L31" href="#L31">31</a>      <em class="jxr_javadoccomment">/**</em>
+<a class="jxr_linenumber" name="L32" href="#L32">32</a>  <em class="jxr_javadoccomment">     * Files with this name; uses index &lt;code&gt;idx_gav_file_name&lt;/code&gt;.</em>
+<a class="jxr_linenumber" name="L33" href="#L33">33</a>  <em class="jxr_javadoccomment">     * The same name can exist in several groups, like &lt;code&gt;core-1.0.jar&lt;/code&gt;.</em>
+<a class="jxr_linenumber" name="L34" href="#L34">34</a>  <em class="jxr_javadoccomment">     */</em>
+<a class="jxr_linenumber" name="L35" href="#L35">35</a>      List&lt;Gav&gt; findByFileName(String fileName) {
+<a class="jxr_linenumber" name="L36" href="#L36">36</a>          <strong class="jxr_keyword">return</strong> <strong class="jxr_keyword">this</strong>.jdbc.sql(<span class="jxr_string">"SELECT "</span> + GAV_COLUMNS + <span class="jxr_string">""</span><span class="jxr_string">"
+<a class="jxr_linenumber" name="L37" href="#L37">37</a>                  FROM gav WHERE file_name = ?
+<a class="jxr_linenumber" name="L38" href="#L38">38</a>                  ORDER BY group_id, artifact_id, version_seq LIMIT ?
+<a class="jxr_linenumber" name="L39" href="#L39">39</a>                  <span class="jxr_string">""</span><span class="jxr_string">")
+<a class="jxr_linenumber" name="L40" href="#L40">40</a>              .params(fileName, MAX_FILE_MATCHES)
+<a class="jxr_linenumber" name="L41" href="#L41">41</a>              .query(GavRepository::gav)
+<a class="jxr_linenumber" name="L42" href="#L42">42</a>              .list();
+<a class="jxr_linenumber" name="L43" href="#L43">43</a>      }
+<a class="jxr_linenumber" name="L44" href="#L44">44</a>  
+<a class="jxr_linenumber" name="L45" href="#L45">45</a>      <em class="jxr_javadoccomment">/** Files with this sha1; uses index &lt;code&gt;idx_gav_sha1&lt;/code&gt;. */</em>
+<a class="jxr_linenumber" name="L46" href="#L46">46</a>      List&lt;Gav&gt; findBySha1(String sha1) {
+<a class="jxr_linenumber" name="L47" href="#L47">47</a>          <strong class="jxr_keyword">return</strong> <strong class="jxr_keyword">this</strong>.jdbc.sql(<span class="jxr_string">"SELECT "</span> + GAV_COLUMNS + <span class="jxr_string">""</span><span class="jxr_string">"
+<a class="jxr_linenumber" name="L48" href="#L48">48</a>                  FROM gav WHERE sha1 = ?
+<a class="jxr_linenumber" name="L49" href="#L49">49</a>                  ORDER BY group_id, artifact_id, version_seq LIMIT ?
+<a class="jxr_linenumber" name="L50" href="#L50">50</a>                  <span class="jxr_string">""</span><span class="jxr_string">")
+<a class="jxr_linenumber" name="L51" href="#L51">51</a>              .params(sha1, MAX_FILE_MATCHES)
+<a class="jxr_linenumber" name="L52" href="#L52">52</a>              .query(GavRepository::gav)
+<a class="jxr_linenumber" name="L53" href="#L53">53</a>              .list();
+<a class="jxr_linenumber" name="L54" href="#L54">54</a>      }
+<a class="jxr_linenumber" name="L55" href="#L55">55</a>  
+<a class="jxr_linenumber" name="L56" href="#L56">56</a>      <em class="jxr_javadoccomment">/** Artifacts of a group, from the summary table &lt;code&gt;ga&lt;/code&gt; (index &lt;code&gt;idx_ga&lt;/code&gt;). */</em>
+<a class="jxr_linenumber" name="L57" href="#L57">57</a>      List&lt;Artifact&gt; findArtifacts(String groupId, <strong class="jxr_keyword">int</strong> limit, <strong class="jxr_keyword">int</strong> offset) {
+<a class="jxr_linenumber" name="L58" href="#L58">58</a>          <strong class="jxr_keyword">return</strong> <strong class="jxr_keyword">this</strong>.jdbc.sql(<span class="jxr_string">""</span><span class="jxr_string">"
+<a class="jxr_linenumber" name="L59" href="#L59">59</a>                  SELECT artifact_id, artifact_version_counter, file_modified_max
+<a class="jxr_linenumber" name="L60" href="#L60">60</a>                  FROM ga WHERE group_id = ?
+<a class="jxr_linenumber" name="L61" href="#L61">61</a>                  ORDER BY artifact_id LIMIT ? OFFSET ?
+<a class="jxr_linenumber" name="L62" href="#L62">62</a>                  <span class="jxr_string">""</span><span class="jxr_string">")
+<a class="jxr_linenumber" name="L63" href="#L63">63</a>              .params(groupId, limit, offset)
+<a class="jxr_linenumber" name="L64" href="#L64">64</a>              .query((rs, i) -&gt; <strong class="jxr_keyword">new</strong> <a name="Artifact" href="../../../org/mavendb/api/Artifact.html#Artifact">Artifact</a>(
+<a class="jxr_linenumber" name="L65" href="#L65">65</a>                  rs.getString(<span class="jxr_string">"artifact_id"</span>),
+<a class="jxr_linenumber" name="L66" href="#L66">66</a>                  rs.getLong(<span class="jxr_string">"artifact_version_counter"</span>),
+<a class="jxr_linenumber" name="L67" href="#L67">67</a>                  nullableLong(rs, <span class="jxr_string">"file_modified_max"</span>)))
+<a class="jxr_linenumber" name="L68" href="#L68">68</a>              .list();
+<a class="jxr_linenumber" name="L69" href="#L69">69</a>      }
+<a class="jxr_linenumber" name="L70" href="#L70">70</a>  
+<a class="jxr_linenumber" name="L71" href="#L71">71</a>      <em class="jxr_javadoccomment">/**</em>
+<a class="jxr_linenumber" name="L72" href="#L72">72</a>  <em class="jxr_javadoccomment">     * Highest version of an artifact by &lt;code&gt;version_seq&lt;/code&gt; (the loader's sortable version number,</em>
+<a class="jxr_linenumber" name="L73" href="#L73">73</a>  <em class="jxr_javadoccomment">     * so 3.10 sorts after 3.9); ties, like 2.0-RC1 and 2.0, go to the newer file. Uses index &lt;code&gt;idx_gav&lt;/code&gt;.</em>
+<a class="jxr_linenumber" name="L74" href="#L74">74</a>  <em class="jxr_javadoccomment">     */</em>
+<a class="jxr_linenumber" name="L75" href="#L75">75</a>      Optional&lt;LatestVersion&gt; findLatest(String groupId, String artifactId) {
+<a class="jxr_linenumber" name="L76" href="#L76">76</a>          <strong class="jxr_keyword">return</strong> <strong class="jxr_keyword">this</strong>.jdbc.sql(<span class="jxr_string">""</span><span class="jxr_string">"
+<a class="jxr_linenumber" name="L77" href="#L77">77</a>                  SELECT group_id, artifact_id, artifact_version, file_modified
+<a class="jxr_linenumber" name="L78" href="#L78">78</a>                  FROM gav WHERE group_id = ? AND artifact_id = ?
+<a class="jxr_linenumber" name="L79" href="#L79">79</a>                  ORDER BY version_seq DESC, file_modified DESC LIMIT 1
+<a class="jxr_linenumber" name="L80" href="#L80">80</a>                  <span class="jxr_string">""</span><span class="jxr_string">")
+<a class="jxr_linenumber" name="L81" href="#L81">81</a>              .params(groupId, artifactId)
+<a class="jxr_linenumber" name="L82" href="#L82">82</a>              .query((rs, i) -&gt; <strong class="jxr_keyword">new</strong> <a name="LatestVersion" href="../../../org/mavendb/api/LatestVersion.html#LatestVersion">LatestVersion</a>(
+<a class="jxr_linenumber" name="L83" href="#L83">83</a>                  rs.getString(<span class="jxr_string">"group_id"</span>),
+<a class="jxr_linenumber" name="L84" href="#L84">84</a>                  rs.getString(<span class="jxr_string">"artifact_id"</span>),
+<a class="jxr_linenumber" name="L85" href="#L85">85</a>                  rs.getString(<span class="jxr_string">"artifact_version"</span>),
+<a class="jxr_linenumber" name="L86" href="#L86">86</a>                  nullableLong(rs, <span class="jxr_string">"file_modified"</span>)))
+<a class="jxr_linenumber" name="L87" href="#L87">87</a>              .optional();
+<a class="jxr_linenumber" name="L88" href="#L88">88</a>      }
+<a class="jxr_linenumber" name="L89" href="#L89">89</a>  
+<a class="jxr_linenumber" name="L90" href="#L90">90</a>      <strong class="jxr_keyword">private</strong> <strong class="jxr_keyword">static</strong> <a name="Gav" href="../../../org/mavendb/api/Gav.html#Gav">Gav</a> gav(ResultSet rs, <strong class="jxr_keyword">int</strong> rowNum) <strong class="jxr_keyword">throws</strong> SQLException {
+<a class="jxr_linenumber" name="L91" href="#L91">91</a>          <strong class="jxr_keyword">return</strong> <strong class="jxr_keyword">new</strong> <a name="Gav" href="../../../org/mavendb/api/Gav.html#Gav">Gav</a>(
+<a class="jxr_linenumber" name="L92" href="#L92">92</a>              rs.getString(<span class="jxr_string">"group_id"</span>),
+<a class="jxr_linenumber" name="L93" href="#L93">93</a>              rs.getString(<span class="jxr_string">"artifact_id"</span>),
+<a class="jxr_linenumber" name="L94" href="#L94">94</a>              rs.getString(<span class="jxr_string">"artifact_version"</span>),
+<a class="jxr_linenumber" name="L95" href="#L95">95</a>              rs.getString(<span class="jxr_string">"classifier"</span>),
+<a class="jxr_linenumber" name="L96" href="#L96">96</a>              rs.getString(<span class="jxr_string">"packaging"</span>),
+<a class="jxr_linenumber" name="L97" href="#L97">97</a>              rs.getString(<span class="jxr_string">"file_extension"</span>),
+<a class="jxr_linenumber" name="L98" href="#L98">98</a>              rs.getString(<span class="jxr_string">"file_name"</span>),
+<a class="jxr_linenumber" name="L99" href="#L99">99</a>              rs.getString(<span class="jxr_string">"sha1"</span>),
+<a class="jxr_linenumber" name="L100" href="#L100">100</a>             nullableLong(rs, <span class="jxr_string">"file_size"</span>),
+<a class="jxr_linenumber" name="L101" href="#L101">101</a>             nullableLong(rs, <span class="jxr_string">"file_modified"</span>));
+<a class="jxr_linenumber" name="L102" href="#L102">102</a>     }
+<a class="jxr_linenumber" name="L103" href="#L103">103</a> 
+<a class="jxr_linenumber" name="L104" href="#L104">104</a>     <strong class="jxr_keyword">private</strong> <strong class="jxr_keyword">static</strong> Long nullableLong(ResultSet rs, String column) <strong class="jxr_keyword">throws</strong> SQLException {
+<a class="jxr_linenumber" name="L105" href="#L105">105</a>         <strong class="jxr_keyword">long</strong> value = rs.getLong(column);
+<a class="jxr_linenumber" name="L106" href="#L106">106</a>         <strong class="jxr_keyword">return</strong> rs.wasNull() ? <strong class="jxr_keyword">null</strong> : value;
+<a class="jxr_linenumber" name="L107" href="#L107">107</a>     }
+<a class="jxr_linenumber" name="L108" href="#L108">108</a> }
+</pre>
+<hr/>
+<div id="footer">© 2026 <a href="http://www.mavendb.org/">Maven DB</a></div>
+</body>
+</html>

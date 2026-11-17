@@ -1,0 +1,66 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="" lang="">
+<head><meta http-equiv="content-type" content="text/html; charset=UTF-8" />
+<title>RateLimitConfig xref</title>
+<link type="text/css" rel="stylesheet" href="../../../stylesheet.css" />
+</head>
+<body>
+<div id="overview"><a href="../../../../apidocs/org/mavendb/api/RateLimitConfig.html">View Javadoc</a></div><pre>
+<a class="jxr_linenumber" name="L1" href="#L1">1</a>   <strong class="jxr_keyword">package</strong> org.mavendb.api;
+<a class="jxr_linenumber" name="L2" href="#L2">2</a>   
+<a class="jxr_linenumber" name="L3" href="#L3">3</a>   <strong class="jxr_keyword">import</strong> org.apache.catalina.filters.RateLimitFilter;
+<a class="jxr_linenumber" name="L4" href="#L4">4</a>   <strong class="jxr_keyword">import</strong> org.apache.catalina.util.ExactRateLimiter;
+<a class="jxr_linenumber" name="L5" href="#L5">5</a>   <strong class="jxr_keyword">import</strong> org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+<a class="jxr_linenumber" name="L6" href="#L6">6</a>   <strong class="jxr_keyword">import</strong> org.springframework.boot.web.servlet.FilterRegistrationBean;
+<a class="jxr_linenumber" name="L7" href="#L7">7</a>   <strong class="jxr_keyword">import</strong> org.springframework.context.annotation.Bean;
+<a class="jxr_linenumber" name="L8" href="#L8">8</a>   <strong class="jxr_keyword">import</strong> org.springframework.context.annotation.Configuration;
+<a class="jxr_linenumber" name="L9" href="#L9">9</a>   <strong class="jxr_keyword">import</strong> org.springframework.core.Ordered;
+<a class="jxr_linenumber" name="L10" href="#L10">10</a>  
+<a class="jxr_linenumber" name="L11" href="#L11">11</a>  <em class="jxr_javadoccomment">/**</em>
+<a class="jxr_linenumber" name="L12" href="#L12">12</a>  <em class="jxr_javadoccomment"> * Limits requests per client IP with Tomcat's built-in {@link RateLimitFilter}, so one client cannot use up a</em>
+<a class="jxr_linenumber" name="L13" href="#L13">13</a>  <em class="jxr_javadoccomment"> * small VPS. Over the limit the answer is &lt;code&gt;429 Too Many Requests&lt;/code&gt;.</em>
+<a class="jxr_linenumber" name="L14" href="#L14">14</a>  <em class="jxr_javadoccomment"> *</em>
+<a class="jxr_linenumber" name="L15" href="#L15">15</a>  <em class="jxr_javadoccomment"> * &lt;p&gt;The client IP is the request's remote address. Behind a reverse proxy on the same host,</em>
+<a class="jxr_linenumber" name="L16" href="#L16">16</a>  <em class="jxr_javadoccomment"> * &lt;code&gt;server.forward-headers-strategy=native&lt;/code&gt; (in &lt;code&gt;application.properties&lt;/code&gt;) makes Tomcat take it from</em>
+<a class="jxr_linenumber" name="L17" href="#L17">17</a>  <em class="jxr_javadoccomment"> * &lt;code&gt;X-Forwarded-For&lt;/code&gt;, before this filter runs; that header is only trusted from internal addresses.</em>
+<a class="jxr_linenumber" name="L18" href="#L18">18</a>  <em class="jxr_javadoccomment"> *</em>
+<a class="jxr_linenumber" name="L19" href="#L19">19</a>  <em class="jxr_javadoccomment"> * &lt;p&gt;Only the API paths are limited: &lt;code&gt;/actuator/health&lt;/code&gt; stays reachable for monitoring.</em>
+<a class="jxr_linenumber" name="L20" href="#L20">20</a>  <em class="jxr_javadoccomment"> * The number of requests served at the same time is capped by &lt;code&gt;server.tomcat.threads.max&lt;/code&gt;.</em>
+<a class="jxr_linenumber" name="L21" href="#L21">21</a>  <em class="jxr_javadoccomment"> */</em>
+<a class="jxr_linenumber" name="L22" href="#L22">22</a>  @Configuration(proxyBeanMethods = false)
+<a class="jxr_linenumber" name="L23" href="#L23">23</a>  @ConditionalOnProperty(prefix = <span class="jxr_string">"mavendb.api.rate-limit"</span>, name = <span class="jxr_string">"enabled"</span>, havingValue = <span class="jxr_string">"true"</span>, matchIfMissing = <strong class="jxr_keyword">true</strong>)
+<a class="jxr_linenumber" name="L24" href="#L24">24</a>  <strong class="jxr_keyword">public</strong> <strong class="jxr_keyword">class</strong> <a name="RateLimitConfig" href="../../../org/mavendb/api/RateLimitConfig.html#RateLimitConfig">RateLimitConfig</a> {
+<a class="jxr_linenumber" name="L25" href="#L25">25</a>  
+<a class="jxr_linenumber" name="L26" href="#L26">26</a>      <em class="jxr_javadoccomment">/** Created by Spring. */</em>
+<a class="jxr_linenumber" name="L27" href="#L27">27</a>      <strong class="jxr_keyword">public</strong> <a name="RateLimitConfig" href="../../../org/mavendb/api/RateLimitConfig.html#RateLimitConfig">RateLimitConfig</a>() {
+<a class="jxr_linenumber" name="L28" href="#L28">28</a>          <em class="jxr_comment">// Nothing to set up</em>
+<a class="jxr_linenumber" name="L29" href="#L29">29</a>      }
+<a class="jxr_linenumber" name="L30" href="#L30">30</a>  
+<a class="jxr_linenumber" name="L31" href="#L31">31</a>      <em class="jxr_javadoccomment">/** Length of a counting window, in seconds. */</em>
+<a class="jxr_linenumber" name="L32" href="#L32">32</a>      <strong class="jxr_keyword">static</strong> <strong class="jxr_keyword">final</strong> <strong class="jxr_keyword">int</strong> WINDOW_SECONDS = 60;
+<a class="jxr_linenumber" name="L33" href="#L33">33</a>  
+<a class="jxr_linenumber" name="L34" href="#L34">34</a>      <em class="jxr_javadoccomment">/**</em>
+<a class="jxr_linenumber" name="L35" href="#L35">35</a>  <em class="jxr_javadoccomment">     * @param props API settings</em>
+<a class="jxr_linenumber" name="L36" href="#L36">36</a>  <em class="jxr_javadoccomment">     * @return Tomcat's rate limit filter on &lt;code&gt;/v1/*&lt;/code&gt;, ahead of the other filters</em>
+<a class="jxr_linenumber" name="L37" href="#L37">37</a>  <em class="jxr_javadoccomment">     */</em>
+<a class="jxr_linenumber" name="L38" href="#L38">38</a>      @Bean
+<a class="jxr_linenumber" name="L39" href="#L39">39</a>      FilterRegistrationBean&lt;RateLimitFilter&gt; rateLimitFilter(<a name="ApiProperties" href="../../../org/mavendb/api/ApiProperties.html#ApiProperties">ApiProperties</a> props) {
+<a class="jxr_linenumber" name="L40" href="#L40">40</a>          FilterRegistrationBean&lt;RateLimitFilter&gt; registration = <strong class="jxr_keyword">new</strong> FilterRegistrationBean&lt;&gt;(<strong class="jxr_keyword">new</strong> RateLimitFilter());
+<a class="jxr_linenumber" name="L41" href="#L41">41</a>          registration.addUrlPatterns(<span class="jxr_string">"/v1/*"</span>);
+<a class="jxr_linenumber" name="L42" href="#L42">42</a>          registration.setOrder(Ordered.HIGHEST_PRECEDENCE + 10);
+<a class="jxr_linenumber" name="L43" href="#L43">43</a>          registration.addInitParameter(<span class="jxr_string">"bucketDuration"</span>, Integer.toString(WINDOW_SECONDS));
+<a class="jxr_linenumber" name="L44" href="#L44">44</a>          registration.addInitParameter(<span class="jxr_string">"bucketRequests"</span>, Integer.toString(props.rateLimit().perClientPerMinute()));
+<a class="jxr_linenumber" name="L45" href="#L45">45</a>          <em class="jxr_comment">// The default FastRateLimiter rounds the window up to a power of two (64 s); keep it at exactly one minute</em>
+<a class="jxr_linenumber" name="L46" href="#L46">46</a>          registration.addInitParameter(<span class="jxr_string">"rateLimitClassName"</span>, ExactRateLimiter.<strong class="jxr_keyword">class</strong>.getName());
+<a class="jxr_linenumber" name="L47" href="#L47">47</a>          <em class="jxr_comment">// RateLimit and RateLimit-Policy headers (IETF draft): the client sees its quota and the requests left</em>
+<a class="jxr_linenumber" name="L48" href="#L48">48</a>          registration.addInitParameter(<span class="jxr_string">"exposeHeaders"</span>, <span class="jxr_string">"true"</span>);
+<a class="jxr_linenumber" name="L49" href="#L49">49</a>          <em class="jxr_comment">// Name of the policy in those headers: RateLimit-Policy: "per-ip";q=60;w=60</em>
+<a class="jxr_linenumber" name="L50" href="#L50">50</a>          registration.addInitParameter(<span class="jxr_string">"policyName"</span>, <span class="jxr_string">"per-ip"</span>);
+<a class="jxr_linenumber" name="L51" href="#L51">51</a>          <strong class="jxr_keyword">return</strong> registration;
+<a class="jxr_linenumber" name="L52" href="#L52">52</a>      }
+<a class="jxr_linenumber" name="L53" href="#L53">53</a>  }
+</pre>
+<hr/>
+<div id="footer">© 2026 <a href="http://www.mavendb.org/">Maven DB</a></div>
+</body>
+</html>
