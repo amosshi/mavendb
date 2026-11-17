@@ -43,7 +43,8 @@
         <maven-jxr-plugin.version>3.6.0</maven-jxr-plugin.version><!-- https://mvnrepository.com/artifact/org.apache.maven.plugins/maven-jxr-plugin -->
         <maven-pmd-plugin.version>3.28.0</maven-pmd-plugin.version><!-- https://mvnrepository.com/artifact/org.apache.maven.plugins/maven-pmd-plugin -->
         <maven-resources-plugin.version>3.5.0</maven-resources-plugin.version><!-- https://mvnrepository.com/artifact/org.apache.maven.plugins/maven-resources-plugin -->
-        <maven-scm-publish-plugin.version>3.3.0</maven-scm-publish-plugin.version><!-- https://mvnrepository.com/artifact/org.apache.maven.plugins/maven-scm-publish-plugin -->
+        <maven-project-info-reports-plugin.version>3.9.0</maven-project-info-reports-plugin.version><!-- https://mvnrepository.com/artifact/org.apache.maven.plugins/maven-project-info-reports-plugin -->
+        <maven-site-plugin.version>3.22.0</maven-site-plugin.version><!-- https://mvnrepository.com/artifact/org.apache.maven.plugins/maven-site-plugin -->
         <maven-surefire-report-plugin.version>3.6.1</maven-surefire-report-plugin.version><!-- https://mvnrepository.com/artifact/org.apache.maven.plugins/maven-surefire-report-plugin -->
         <maven-surefire-plugin.version>3.6.1</maven-surefire-plugin.version><!-- https://mvnrepository.com/artifact/org.apache.maven.plugins/maven-surefire-plugin -->
         <spotbugs-maven-plugin.version>4.10.5.0</spotbugs-maven-plugin.version><!-- https://mvnrepository.com/artifact/com.github.spotbugs/spotbugs-maven-plugin -->
@@ -52,6 +53,7 @@
         <commons-lang3.version>3.22.0</commons-lang3.version><!-- https://mvnrepository.com/artifact/org.apache.commons/commons-lang3 -->
         <duckdb-jdbc.version>2.0.0.1</duckdb-jdbc.version><!-- https://mvnrepository.com/artifact/org.duckdb/duckdb_jdbc -->
         <indexer.version>7.1.6</indexer.version><!-- https://mvnrepository.com/artifact/org.apache.maven.indexer/indexer-reader -->
+        <maven-fluido-skin.version>2.1.0</maven-fluido-skin.version><!-- https://mvnrepository.com/artifact/org.apache.maven.skins/maven-fluido-skin -->
         <junit.version>6.1.3</junit.version><!-- https://mvnrepository.com/artifact/org.junit.jupiter/junit-jupiter -->
         <mariadb-java-client.version>4.0.0</mariadb-java-client.version><!-- https://mvnrepository.com/artifact/org.mariadb.jdbc/mariadb-java-client -->
         <mongodb-driver-sync.version>5.14.0</mongodb-driver-sync.version><!-- https://mvnrepository.com/artifact/org.mongodb/mongodb-driver-sync -->
@@ -80,7 +82,7 @@
             <name>GitHub classviz Apache Maven Packages</name>
             <url>https://maven.pkg.github.com/classviz/mavendb</url>
         </repository>
-        <site child.site.url.inherit.append.path="false">
+        <site>
             <id>github.com</id>
             <url>scm:git:https://github.com/classviz/mavendb.git</url>
         </site>
@@ -219,7 +221,8 @@
     <build>
         <pluginManagement>
             <plugins>
-                <!-- JavaDoc with UML package and class diagrams (PlantUML), for every module -->
+                <!-- JavaDoc with UML package and class diagrams (PlantUML), for every module and the aggregated site javadoc -->
+                <!-- https://maven.apache.org/plugins/maven-javadoc-plugin/index.html -->
                 <!-- https://github.com/talsma-ict/umldoclet -->
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
@@ -234,10 +237,117 @@
                             <artifactId>umldoclet</artifactId>
                             <version>${umldoclet.version}</version>
                         </docletArtifact>
+                        <additionalJOptions>
+                            <additionalJOption>-Xdoclint:all</additionalJOption>
+                            <additionalJOption>-Xdoclint:-missing</additionalJOption>
+                            <additionalJOption>-J-Xmx4g</additionalJOption>
+                        </additionalJOptions>
+                        <detectJavaApiLink>true</detectJavaApiLink>
+                        <!-- detectLinks guesses <project url>/apidocs, which is wrong for most dependencies: list them here -->
+                        <detectLinks>false</detectLinks>
+                        <header>Maven DB</header>
+                        <show>private</show>
+                        <!-- doc-files generated during the build, such as build.sh's org/mavendb/loader/doc-files/module-graph.svg.
+                             The aggregated javadoc copies the same relative directory of every module -->
+                        <javadocDirectory>${project.build.directory}/javadoc-resources</javadocDirectory>
+
+                        <links>
+                            <link>https://commons.apache.org/proper/commons-cli/apidocs/</link>
+                            <link>https://commons.apache.org/proper/commons-lang/apidocs/</link>
+                            <link>https://www.javadoc.io/doc/com.github.spotbugs/spotbugs-annotations/${spotbugs.version}/</link>
+                            <link>https://maven.apache.org/maven-indexer/apidocs</link>
+                            <link>https://mybatis.org/mybatis-3/apidocs/</link>
+                            <link>https://www.slf4j.org/apidocs/</link>
+                            <link>https://www.javadoc.io/doc/org.postgresql/postgresql/${postgresql.version}/</link>
+                            <link>https://docs.spring.io/spring-framework/docs/current/javadoc-api/</link>
+                            <link>https://docs.spring.io/spring-boot/api/java/</link>
+                        </links>
                     </configuration>
+                </plugin>
+
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-site-plugin</artifactId>
+                    <version>${maven-site-plugin.version}</version>
                 </plugin>
             </plugins>
         </pluginManagement>
+
+        <plugins>
+            <!-- Maven site of all modules: ./mvnw site site:stage, output in target/staging.
+                 .github/workflows/site.yml publishes it to the gh-pages branch after each merge into main -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-site-plugin</artifactId>
+            </plugin>
+        </plugins>
     </build>
+
+    <!-- Reports of every module; mavendb-loader adds its code analysis reports -->
+    <reporting>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-project-info-reports-plugin</artifactId>
+                <version>${maven-project-info-reports-plugin.version}</version>
+                <reportSets>
+                    <reportSet>
+                        <reports>
+                            <report>index</report>
+                            <report>summary</report>
+                            <report>modules</report>
+                            <report>dependencies</report>
+                            <report>dependency-convergence</report>
+                            <report>scm</report>
+                            <report>issue-management</report>
+                        </reports>
+                    </reportSet>
+                </reportSets>
+            </plugin>
+
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-javadoc-plugin</artifactId>
+                <version>${maven-javadoc-plugin.version}</version>
+                <reportSets>
+                    <!-- One javadoc of all modules, at the site root: apidocs/index.html -->
+                    <reportSet>
+                        <id>aggregate</id>
+                        <inherited>false</inherited>
+                        <reports>
+                            <report>aggregate-no-fork</report>
+                        </reports>
+                    </reportSet>
+                    <!-- Javadoc of each module -->
+                    <reportSet>
+                        <id>module</id>
+                        <reports>
+                            <report>javadoc-no-fork</report>
+                        </reports>
+                    </reportSet>
+                </reportSets>
+            </plugin>
+
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jxr-plugin</artifactId>
+                <version>${maven-jxr-plugin.version}</version>
+            </plugin>
+
+            <!-- Test results of the last build: report-only, so the site does not run the tests again -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-report-plugin</artifactId>
+                <version>${maven-surefire-report-plugin.version}</version>
+                <reportSets>
+                    <reportSet>
+                        <reports>
+                            <report>report-only</report>
+                        </reports>
+                    </reportSet>
+                </reportSets>
+            </plugin>
+        </plugins>
+    </reporting>
 
 </project>

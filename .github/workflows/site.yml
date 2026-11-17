@@ -1,0 +1,64 @@
+name: Site
+
+# After a PR is merged into main: build the Maven site of all modules and publish it to the gh-pages branch
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write    # push to gh-pages
+
+# One publish at a time; a newer merge replaces a pending one
+concurrency:
+  group: site
+  cancel-in-progress: true
+
+jobs:
+  site:
+    runs-on: ubuntu-26.04
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up OpenJDK 25
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: maven
+
+      - name: Install graphviz
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q graphviz
+
+      # Same order as build.sh: the module graph is embedded in the javadoc, so it is built before 'site'
+      - name: Compile
+        run: ./mvnw -B -ntp compile
+
+      - name: Dependency graphs
+        run: ./graphs.sh
+
+      # verify: the site shows the test results of this build
+      - name: Build, test and stage the site
+        run: ./mvnw -B -ntp verify site site:stage
+
+      - name: Check the site
+        run: |
+          test -f target/staging/index.html
+          test -f target/staging/apidocs/index.html
+          test -f target/staging/apidocs/org/mavendb/loader/doc-files/module-graph.svg
+
+      # gh-pages holds only the latest site: one commit, force-pushed, so old sites do not pile up in the history
+      - name: Publish to gh-pages
+        working-directory: target/staging
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          touch .nojekyll
+          git init -q -b gh-pages
+          git add -A
+          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+              commit -q -m "Site of ${GITHUB_SHA}"
+          git push -q -f "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" gh-pages

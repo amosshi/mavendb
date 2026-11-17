@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Maven site of all modules; the modules inherit this descriptor -->
+<site xmlns="http://maven.apache.org/SITE/2.0.0"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="http://maven.apache.org/SITE/2.0.0 https://maven.apache.org/xsd/site-2.0.0.xsd">
+
+    <skin>
+        <groupId>org.apache.maven.skins</groupId>
+        <artifactId>maven-fluido-skin</artifactId>
+        <version>${maven-fluido-skin.version}</version>
+    </skin>
+
+    <body>
+        <!-- Root only: each module has its own javadoc under Project Reports -->
+        <menu name="Documentation">
+            <item name="API Docs (all modules)" href="apidocs/index.html"/>
+        </menu>
+
+        <menu ref="parent" inherit="top"/>
+        <menu ref="modules" inherit="top"/>
+        <menu ref="reports" inherit="bottom"/>
+    </body>
+</site>

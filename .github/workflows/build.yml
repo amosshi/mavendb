@@ -55,15 +55,13 @@ jobs:
           java -version
           dot -V
 
-      # Same order as build.sh: the class graph is built from target/classes
-      # and must exist before 'package' puts it into the dist zip as doc/project.svg
+      # Same order as build.sh: the graphs are built from target/classes
+      # and must exist before 'package' puts the class graph into the dist zip as doc/project.svg
       - name: Compile
         run: ./mvnw -B -ntp compile
 
-      - name: Class dependency graph
-        run: |
-          jdeps -verbose:class -filter:none -e 'org\.mavendb\..*' -dotoutput mavendb-loader/target/jdeps mavendb-loader/target/classes
-          dot -Tsvg mavendb-loader/target/jdeps/classes.dot -o mavendb-loader/target/jdeps/project.svg
+      - name: Dependency graphs
+        run: ./graphs.sh
 
       - name: Build and test
         run: ./mvnw -B -ntp verify
