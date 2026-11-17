@@ -340,24 +340,18 @@ repositoryId=7
 ```
 
 
-### Publish Site
+### Site
 
-Maven Settings
-* Edit `conf/settings.xml`
-* Add Server section, where
-  * `username` is the github login user
-  * `password` is the github user's token
-
-```
-<server>
-  <id>github.com</id>
-  <username></username>
-  <password></password>
-</server>
-```
+Build the site
+* `./build.sh`: builds and tests all modules, then stages the site of all modules in `target/staging`
+  * `target/staging/index.html`: the parent site, with links to the module sites
+  * `target/staging/apidocs/index.html`: the javadoc of all modules
+  * The javadoc of mavendb-loader embeds the module graph that [graphs.sh](graphs.sh) generates; `./mvnw clean site` alone leaves it out
 
 Publish site
-* `./mvnw clean site site:stage scm-publish:publish-scm`
+* After each merge into `main`, the [Site](.github/workflows/site.yml) workflow builds the site and publishes it to the `gh-pages` branch
+* The branch holds only the latest site (one commit, force-pushed)
+* It can also be started by hand: Actions → Site → Run workflow
 
 
 ### Sample Data
