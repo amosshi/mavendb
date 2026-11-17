@@ -19,6 +19,24 @@ This application will scan all `maven` repos items and store them to database. S
 All 3rd party versions are set once, in the `<dependencyManagement>` of the root [pom.xml](pom.xml);
 the module poms declare dependencies without versions.
 
+Dependency graphs, from the [javadoc](https://amosshi.github.io/mavendb/apidocs/) on the published site (see [Site](#site)):
+
+<details>
+<summary>mavendb-loader: jar graph and module graph</summary>
+
+![Jar graph of mavendb-loader](https://amosshi.github.io/mavendb/apidocs/org/mavendb/loader/doc-files/jar-graph.svg)
+
+![Module graph of mavendb-loader](https://amosshi.github.io/mavendb/apidocs/org/mavendb/loader/doc-files/module-graph.svg)
+</details>
+
+<details>
+<summary>mavendb-api: jar graph and module graph</summary>
+
+![Jar graph of mavendb-api](https://amosshi.github.io/mavendb/apidocs/org/mavendb/api/doc-files/jar-graph.svg)
+
+![Module graph of mavendb-api](https://amosshi.github.io/mavendb/apidocs/org/mavendb/api/doc-files/module-graph.svg)
+</details>
+
 ## Prepare Database
 
 ### Option: MongoDB
@@ -140,13 +158,13 @@ It downloads into this module’s target/ folder:
 
 ## Build and Run
 
-Requriments
+Requirements
 
 * OpenJDK `25` or later
 * Maven: bundled wrapper `./mvnw` downloads the pinned version (see `.mvn/wrapper/maven-wrapper.properties`)
-* Optionally: `graphviz` for code relation diagram
-  * MacOS: `sudo apt install graphviz -y`
-  * Ubuntu: `brew install graphviz`
+* `graphviz`: `./build.sh` runs [graphs.sh](graphs.sh), which needs `dot` for the dependency graphs in the javadoc
+  * MacOS: `brew install graphviz`
+  * Ubuntu: `sudo apt install graphviz -y`
 
 Build the Source Code
 * `./build.sh`
@@ -346,7 +364,8 @@ Build the site
 * `./build.sh`: builds and tests all modules, then stages the site of all modules in `target/staging`
   * `target/staging/index.html`: the parent site, with links to the module sites
   * `target/staging/apidocs/index.html`: the javadoc of all modules
-  * The javadoc of mavendb-loader embeds the module graph that [graphs.sh](graphs.sh) generates; `./mvnw clean site` alone leaves it out
+  * The javadoc of mavendb-loader and of mavendb-api embeds the jar graph and the module graph that [graphs.sh](graphs.sh) generates; `./mvnw clean site` alone leaves it out
+  * Each package folder has a README.md with the UML diagrams of its classes, for example [org.mavendb.loader](mavendb-loader/src/main/java/org/mavendb/loader/). [graphs.sh](graphs.sh) regenerates them: commit them when a class is added, removed or renamed
 
 Publish site
 * After each merge into `main`, the [Site](.github/workflows/site.yml) workflow builds the site and publishes it to the `gh-pages` branch

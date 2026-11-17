@@ -55,13 +55,23 @@ jobs:
           java -version
           dot -V
 
-      # Same order as build.sh: the graphs are built from target/classes
-      # and must exist before 'package' puts the class graph into the dist zip as doc/project.svg
+      # Same order as build.sh: the graphs are built from target/classes, for the javadoc
       - name: Compile
         run: ./mvnw -B -ntp compile
 
       - name: Dependency graphs
         run: ./graphs.sh
+
+      # graphs.sh also regenerates the committed README.md of each package folder: fail when a class was added or removed without it
+      - name: Check the package READMEs are up to date
+        run: |
+          changes=$(git status --porcelain -- ':(glob)*/src/main/java/**/README.md')
+          if [ -n "$changes" ]; then
+            echo "$changes"
+            git diff -- ':(glob)*/src/main/java/**/README.md'
+            echo "::error::Package READMEs are out of date: run ./graphs.sh and commit them"
+            exit 1
+          fi
 
       - name: Build and test
         run: ./mvnw -B -ntp verify
@@ -69,8 +79,12 @@ jobs:
       - name: Check the API jar is executable
         run: unzip -l mavendb-api/target/mavendb-api.jar | grep 'BOOT-INF/classes/org/mavendb/api/MavendbApiApplication.class'
 
-      - name: Check class graph is in the dist zip
-        run: unzip -l mavendb-loader/dist/*.zip | grep 'doc/project.svg'
+      - name: Check the graphs for the javadoc
+        run: |
+          test -f mavendb-loader/target/javadoc-resources/org/mavendb/loader/doc-files/jar-graph.svg
+          test -f mavendb-loader/target/javadoc-resources/org/mavendb/loader/doc-files/module-graph.svg
+          test -f mavendb-api/target/javadoc-resources/org/mavendb/api/doc-files/jar-graph.svg
+          test -f mavendb-api/target/javadoc-resources/org/mavendb/api/doc-files/module-graph.svg
 
       - name: Upload test reports
         if: failure()

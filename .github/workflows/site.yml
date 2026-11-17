@@ -33,7 +33,7 @@ jobs:
           sudo apt-get update -q
           sudo apt-get install -y -q graphviz
 
-      # Same order as build.sh: the module graph is embedded in the javadoc, so it is built before 'site'
+      # Same order as build.sh: the jar and module graphs are embedded in the javadoc, so it is built before 'site'
       - name: Compile
         run: ./mvnw -B -ntp compile
 
@@ -48,7 +48,10 @@ jobs:
         run: |
           test -f target/staging/index.html
           test -f target/staging/apidocs/index.html
+          test -f target/staging/apidocs/org/mavendb/loader/doc-files/jar-graph.svg
           test -f target/staging/apidocs/org/mavendb/loader/doc-files/module-graph.svg
+          test -f target/staging/apidocs/org/mavendb/api/doc-files/jar-graph.svg
+          test -f target/staging/apidocs/org/mavendb/api/doc-files/module-graph.svg
 
       # gh-pages holds only the latest site: one commit, force-pushed, so old sites do not pile up in the history
       - name: Publish to gh-pages
