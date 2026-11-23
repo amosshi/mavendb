@@ -56,13 +56,13 @@
         <maven-fluido-skin.version>2.1.0</maven-fluido-skin.version><!-- https://mvnrepository.com/artifact/org.apache.maven.skins/maven-fluido-skin -->
         <junit.version>6.1.3</junit.version><!-- https://mvnrepository.com/artifact/org.junit.jupiter/junit-jupiter -->
         <mariadb-java-client.version>4.0.0</mariadb-java-client.version><!-- https://mvnrepository.com/artifact/org.mariadb.jdbc/mariadb-java-client -->
-        <mongodb-driver-sync.version>5.14.0</mongodb-driver-sync.version><!-- https://mvnrepository.com/artifact/org.mongodb/mongodb-driver-sync -->
+        <mongodb-driver-sync.version>5.15.0</mongodb-driver-sync.version><!-- https://mvnrepository.com/artifact/org.mongodb/mongodb-driver-sync -->
         <mybatis.version>3.6.0</mybatis.version><!-- https://mvnrepository.com/artifact/org.mybatis/mybatis -->
         <mysql-connector-j.version>26.10.0</mysql-connector-j.version><!-- https://mvnrepository.com/artifact/com.mysql/mysql-connector-j -->
         <postgresql.version>42.7.14</postgresql.version><!-- https://mvnrepository.com/artifact/org.postgresql/postgresql -->
         <sqlite-jdbc.version>3.54.1.0</sqlite-jdbc.version><!-- https://mvnrepository.com/artifact/org.xerial/sqlite-jdbc -->
         <slf4j.version>2.0.20</slf4j.version><!-- https://mvnrepository.com/artifact/org.slf4j/slf4j-jdk14 -->
-        <spring-boot.version>4.1.2</spring-boot.version><!-- https://mvnrepository.com/artifact/org.springframework.boot/spring-boot-dependencies -->
+        <spring-boot.version>4.2.0</spring-boot.version><!-- https://mvnrepository.com/artifact/org.springframework.boot/spring-boot-dependencies -->
         <spotbugs.version>4.10.5</spotbugs.version><!-- https://mvnrepository.com/artifact/com.github.spotbugs/spotbugs -->
         <umldoclet.version>2.3.2</umldoclet.version><!-- https://mvnrepository.com/artifact/nl.talsmasoftware/umldoclet -->
     </properties>
